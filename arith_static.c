@@ -1214,15 +1214,15 @@ unsigned char *arith_uncompress(unsigned char *in, unsigned int in_size,
 int main(int argc, char **argv) {
     int opt, order = 1;
     unsigned char in_buf[(int)(BLK_SIZE2+257*257*3 + 37)];
-    int decode = 0;
+    int decode = 0, test = 0;
     FILE *infp = stdin, *outfp = stdout;
-    struct timeval tv1, tv2;
+    struct timeval tv1, tv2, tv3;
     size_t bytes = 0;
 
     extern char *optarg;
     extern int optind, opterr, optopt;
 
-    while ((opt = getopt(argc, argv, "o:d")) != -1) {
+    while ((opt = getopt(argc, argv, "o:dt")) != -1) {
 	switch (opt) {
 	case 'o':
 	    order = atoi(optarg);
@@ -1230,6 +1230,10 @@ int main(int argc, char **argv) {
 
 	case 'd':
 	    decode = 1;
+	    break;
+
+	case 't':
+	    test = 1;
 	    break;
 	}
     }
@@ -1253,6 +1257,67 @@ int main(int argc, char **argv) {
     }
 
     gettimeofday(&tv1, NULL);
+
+    if (test) {
+	size_t len, in_sz = 0, out_sz = 0;
+	typedef struct {
+	    unsigned char *blk;
+	    uint32_t sz;
+	} blocks;
+	blocks *b = NULL, *bc, *bu;
+	int nb = 0, i;
+	
+	while ((len = fread(in_buf, 1, BLK_SIZE, infp)) != 0) {
+	    // inefficient, but it'll do for testing
+	    b = realloc(b, (nb+1)*sizeof(*b));
+	    b[nb].blk = malloc(len);
+	    b[nb].sz = len;
+	    memcpy(b[nb].blk, in_buf, len);
+	    nb++;
+	    in_sz += len;
+	}
+
+	int trials = 10;
+	while (trials--) {
+	    bc = malloc(nb*sizeof(*bc));
+	    bu = malloc(nb*sizeof(*bu));
+
+	    gettimeofday(&tv1, NULL);
+
+	    out_sz = 0;
+	    for (i = 0; i < nb; i++) {
+		bc[i].blk = arith_compress(b[i].blk, b[i].sz, &bc[i].sz, order);
+		out_sz += 5 + bc[i].sz;
+		bc[i].blk = realloc(bc[i].blk, bc[i].sz);
+	    }
+	
+	    gettimeofday(&tv2, NULL);
+
+	    for (i = 0; i < nb; i++) {
+		bu[i].blk = arith_uncompress(bc[i].blk, bc[i].sz, &bu[i].sz, order);
+	    }
+
+	    gettimeofday(&tv3, NULL);
+
+	    for (i = 0; i < nb; i++) {
+		if (b[i].sz != bu[i].sz || memcmp(b[i].blk, bu[i].blk, b[i].sz))
+		    fprintf(stderr, "Mismatch in block %d\n", i);
+		free(bc[i].blk);
+		free(bu[i].blk);
+	    }
+	    free(bc);
+	    free(bu);
+
+	    fprintf(stderr, "%5.1f MB/s enc, %5.1f MB/s dec\t %lld bytes -> %lld bytes\n",
+		    (double)in_sz / ((long)(tv2.tv_sec - tv1.tv_sec)*1000000 +
+				     tv2.tv_usec - tv1.tv_usec),
+		    (double)in_sz / ((long)(tv3.tv_sec - tv2.tv_sec)*1000000 +
+				     tv3.tv_usec - tv2.tv_usec),
+		    (long long)in_sz, (long long)out_sz);
+	}
+
+	exit(0);
+    }
 
     if (decode) {
 	// Only used in some test implementations of RC_GetFreq()

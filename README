@@ -1,3 +1,6 @@
+Introduction
+------------
+
 These are my derivations of Fabien 'Ryg's rANS coder plus a
 static arithmetic coder derived from Eugene Shelwein's work.
 Therefore none of the really complex stuff is my own and the real
@@ -53,3 +56,75 @@ because it's easier for people to find and discuss.
 PS.
 See http://encode.ru/threads/1867-Unrolling-arithmetic-coding
 for the thread that started this particular ball rolling.
+
+
+Usage
+-----
+
+Order 0 encoding and decoding
+
+    rANS_static4j -o0 in in.rans0
+    rANS_static4j -d in.rans0 in.decoded
+
+Order 1 encoding and decoding
+
+    rANS_static4j -o0 in in.rans1
+    rANS_static4j -d in.rans1 in.decoded
+
+Testing/benchmarking order 1
+
+    rANS_static4j -o1 -t in
+
+
+Benchmarks
+----------
+
+Q40 and Q8 are DNA sequencing quality values with approx 40 and 8
+distinct values each, representing high and low complexity data.
+
+$ head -5 /tmp/Q40
+AAA7DDFFFHHHGFHIGHGIGGIJIGHCIGGHBGFCGGGEGGCGEG@F;FC;8@@F>@E@6)=?B66?@A;?(555;=((,55(((((+2(39(288<
+:?A=DA;?BDH?F<BGG>F>?;EF>8:8?E>FHGIIIEIHICH9@F(?BFEEGHEIIC<@DEEEEEC2?=A;;?@?;((5,5?9(9<0()9388(>AC
+AAA@ABFFFHHHGHGJIGEEIGHIGIIIIIJIHEGIGGIGGGIDGIIIJH>B<@DD;;B?E===;@FDGH3=@EAHA;?))7;6((.5(,;(,((5(,
+?BABFABDFHHHHHHHIJJJJJIIJJJGHGIJDIE@DDGDF@GHGGGAEGGCEE>CDFDB;>>A@=;AC??BBDC(<A<?C<AB?<??AB8<(28?09
+2((2+&)&)&(+24++(((+22(:))&&0-))&&&)&3,,,((,,'',''-(/)).))))(((((0(()))3.--2))).))2)50-(((((((((((
+
+$ head -5 /tmp/Q8
+--A--JJ7-----<---7-
+7----<--<<-<7-7--FF
+--FAAA7-JFFFF<FFJ<7<FFFJFAJFFFJJAAF<A<JJ<FJJ7FJJFFJJ7F7FAAJJFFFFJJJJFJFJJFJFJFJJJJFJFJJFFJF<JJFJJJJJ7FJJJJF<7<FJJJAJJJFAFJFFFJF<JFJJJJJJFAJJFJJJJJFFFFF
+JJJ<JJJJ<JJJJJ7FFJFJJFJJF<AFAAJJJFJFJJ7FJFJJ7FFJJFJFFFFF<<AAFJJAFF
+FFFFFJFJJFJJJFJJJJJAJJJJAJJJFJJJJFJJJJFJJJJJJJJJJJJJJJFJFJFAJJJJJJJFJAJJJJ<AJJJJJJFJJJJFFJFJFJJFFJFJJFFJFJJAJJJJFJJ7JJJJAJJJ7J-FAJAJ7JJJAFFAFFFAFF-JFFA
+
+
+Tested on an "Intel(R) Core(TM) i5-4570 CPU @ 3.20GHz" (from
+/proc/cpuinfo on Ubuntu Trusty).
+
+
+Q40 test file, order 0:
+arith_static            251.2 MB/s enc, 143.0 MB/s dec  94602182 bytes -> 53711390 bytes
+rANS_static4c           289.2 MB/s enc, 340.0 MB/s dec  94602182 bytes -> 53690171 bytes
+rANS_static4j           293.7 MB/s enc, 376.1 MB/s dec  94602182 bytes -> 53690159 bytes
+rANS_static4_16i        299.9 MB/s enc, 377.0 MB/s dec  94602182 bytes -> 53690048 bytes
+rANS_static64c          279.0 MB/s enc, 439.4 MB/s dec  94602182 bytes -> 53691108 bytes
+
+Q8 test file, order 0:
+arith_static            239.1 MB/s enc, 145.4 MB/s dec  73124567 bytes -> 16854053 bytes
+rANS_static4c           291.7 MB/s enc, 349.5 MB/s dec  73124567 bytes -> 16847633 bytes
+rANS_static4j           290.5 MB/s enc, 354.2 MB/s dec  73124567 bytes -> 16847597 bytes
+rANS_static4_16i        371.0 MB/s enc, 453.6 MB/s dec  73124567 bytes -> 16847528 bytes
+rANS_static64c          351.0 MB/s enc, 549.4 MB/s dec  73124567 bytes -> 16848348 bytes
+
+Q40 test file, order 1:
+arith_static            128.4 MB/s enc,  94.7 MB/s dec  94602182 bytes -> 43420823 bytes
+rANS_static4c           168.4 MB/s enc, 212.1 MB/s dec  94602182 bytes -> 43167683 bytes
+rANS_static4j           170.0 MB/s enc, 240.2 MB/s dec  94602182 bytes -> 43167683 bytes
+rANS_static4_16i        188.4 MB/s enc, 254.9 MB/s dec  94602182 bytes -> 43229063 bytes
+rANS_static64c          203.9 MB/s enc, 287.1 MB/s dec  94602182 bytes -> 43168614 bytes
+
+Q8 test file, order 1:
+arith_static            189.2 MB/s enc, 130.4 MB/s dec  73124567 bytes -> 15860154 bytes
+rANS_static4c           208.6 MB/s enc, 269.2 MB/s dec  73124567 bytes -> 15849814 bytes
+rANS_static4j           210.5 MB/s enc, 305.1 MB/s dec  73124567 bytes -> 15849814 bytes
+rANS_static4_16i        240.4 MB/s enc, 345.4 MB/s dec  73124567 bytes -> 15869029 bytes
+rANS_static64c          239.2 MB/s enc, 397.6 MB/s dec  73124567 bytes -> 15850522 bytes

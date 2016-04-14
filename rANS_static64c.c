@@ -1168,7 +1168,7 @@ int main(int argc, char **argv) {
 	    unsigned char *blk;
 	    uint32_t sz;
 	} blocks;
-	blocks *b = NULL, *bc;
+	blocks *b = NULL, *bc, *bu;
 	int nb = 0, i;
 	
 	while ((len = fread(in_buf, 1, BLK_SIZE, infp)) != 0) {
@@ -1183,9 +1183,11 @@ int main(int argc, char **argv) {
 
 	int trials = 10;
 	while (trials--) {
+	    bc = malloc(nb*sizeof(*bc));
+	    bu = malloc(nb*sizeof(*bu));
+
 	    gettimeofday(&tv1, NULL);
 
-	    bc = malloc(nb*sizeof(*bc));
 	    out_sz = 0;
 	    for (i = 0; i < nb; i++) {
 		bc[i].blk = rans_compress(b[i].blk, b[i].sz, &bc[i].sz, order);
@@ -1196,15 +1198,19 @@ int main(int argc, char **argv) {
 	    gettimeofday(&tv2, NULL);
 
 	    for (i = 0; i < nb; i++) {
-		unsigned char *out;
-		uint32_t usz;
-		out = rans_uncompress(bc[i].blk, bc[i].sz, &usz, order);
-		free(out);
-		free(bc[i].blk);
+		bu[i].blk = rans_uncompress(bc[i].blk, bc[i].sz, &bu[i].sz, order);
 	    }
-	    free(bc);
 
 	    gettimeofday(&tv3, NULL);
+
+	    for (i = 0; i < nb; i++) {
+		if (b[i].sz != bu[i].sz || memcmp(b[i].blk, bu[i].blk, b[i].sz))
+		    fprintf(stderr, "Mismatch in block %d\n", i);
+		free(bc[i].blk);
+		free(bu[i].blk);
+	    }
+	    free(bc);
+	    free(bu);
 
 	    fprintf(stderr, "%5.1f MB/s enc, %5.1f MB/s dec\t %lld bytes -> %lld bytes\n",
 		    (double)in_sz / ((long)(tv2.tv_sec - tv1.tv_sec)*1000000 +
