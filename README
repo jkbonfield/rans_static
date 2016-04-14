@@ -1,0 +1,55 @@
+These are my derivations of Fabien 'Ryg's rANS coder plus a
+static arithmetic coder derived from Eugene Shelwein's work.
+Therefore none of the really complex stuff is my own and the real
+credit belongs elsewhere.
+
+The originals can be found at:
+    https://github.com/rygorous/ryg_rans
+    http://ctxmodel.net (defunct?)
+
+I thought about forking this, but I didn't do that way back when I
+first created my variants and so it'd be a fork in name only, with no
+actual history.
+
+The arithmetic coder was designed to be a fast unrolled variant that
+coded using multiple arithmetic coders simultaneously. I also
+implemented a static order-1 model in addition to the usual order-0.
+
+About the same time I'd finished that code the ANS implementations
+started arriving so I took Ryg's original rANS (two way interleaved
+variant) and produced a 4-way interleaved version.  Successive
+optimisations lead version "4c".  Most recently I explored some newer
+tweaks and ideas.
+
+arith_static.c
+	The unrolled order-0/1 arithmetic coder.
+
+rANS_static4c.c
+	A 4-way unrolled order-0/1 rANS coder.
+
+rANS_static4j.c
+	Recent (Apr 2016) optimisations to 4c.c above.
+	The output is interchangeable.
+
+rANS_static64c.c
+rans64.h
+	A 4 way unrolled version of Ryg's rans64.h.
+	(This needs a mulhi cpu instruction to do 64-bit by 64-bit
+	multiplication and take the top 64-bits of the result.
+	Available on most(all?) x86_64 architectures, but I needed to
+	consider 32-bit hosts too.)
+
+rANS_static4_16i.c
+	A variant of the rANS_static4 code that uses 16-bit shifts.
+	Kludgy and full of warnings. It may also not be robust!
+	This is the same idea used in Ryg's SIMD variant; by keeping
+	the rANS state as 16+16 instead of 24+8 we only ever have one
+	normalisation step instead of two.
+
+Sorry there's no makefile, but it's all self contained single .c files
+basically.  I put these here in place of my old ftp site simply
+because it's easier for people to find and discuss.
+
+PS.
+See http://encode.ru/threads/1867-Unrolling-arithmetic-coding
+for the thread that started this particular ball rolling.
