@@ -319,76 +319,29 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
     // renormalize
     uint32_t x = *r;
 
-#if 0
-
-// Branchless, slow
-//    uint8_t* ptr = *pptr;
-//    int j = !(x & 0xffff8000);
-//    x <<= j*8;
-//    x |= *ptr * j;
-//    ptr += j;
-//    j = !(x & 0xff800000);
-//    x <<= j*8;
-//    x |= *ptr * j;
-//    ptr += j;
-//    *pptr = ptr;
-
-//// Branchless, slow
-//    uint8_t* ptr = *pptr;
-//    int j = !(x & 0xffff8000);
-//    x <<= j*8;
-//    x |= *ptr * j;
-//    int k = !(x & 0xff800000);
-//    x <<= k*8;
-//    x |= ptr[j] * k;
-//    ptr += j+k;
-//    *pptr = ptr;
-
-//// Branchless, OK; best on AMD
-//    int j = (x < RANS_BYTE_L);
-//    uint16_t* ptr = *(uint16_t **)pptr;
-//
-//    x = x << (j*16);
-//    x |= *ptr >> ((1-j)*16);
-//    *pptr = (uint8_t *)(ptr + j);
-
-// Branchless, best, but only faster on complex data on Intel i5+
-    //int j = (x < RANS_BYTE_L);
-    int j = !(x & ~(RANS_BYTE_L-1));
-    uint16_t* ptr = *(uint16_t **)pptr;
-    uint32_t xx[] = {0, (1<<16)-1};
-
-    x = x << (j<<4);
-    x |= *ptr & xx[j];
-    *pptr = (uint8_t *)(ptr + j);
-
-//    // ~244
-//    if (x < RANS_BYTE_L) {
-//        uint8_t* ptr = *pptr;
-//        do x = (x << 8) | *ptr++; while (x < RANS_BYTE_L);
-//        *pptr = ptr;
-//    }
-#else
-//    if (__builtin_expect(x < RANS_BYTE_L, 1)) {
-//        uint8_t* ptr = *pptr;
-//	x = (x << 8) | *ptr++;
-//	if (__builtin_expect(x < RANS_BYTE_L,1))
-//	    x = (x << 8) | *ptr++;
-//        *pptr = ptr;
-//    }
-
-//    // ~257
-//    if (x < RANS_BYTE_L) {
-//        uint16_t* ptr = *(uint16_t **)pptr;
-//	x = (x << 16) | *ptr++;
-//        *pptr = (uint8_t *)ptr;
-//    }
-
+#ifndef __x86_64
     // ~257
     //if (x & ~(RANS_BYTE_L-1)) {
     if (x >= RANS_BYTE_L) return;
     uint16_t* ptr = *(uint16_t **)pptr;
     x = (x << 16) | *ptr++;
+    *pptr = (uint8_t *)ptr;
+#else
+    uint16_t  *ptr = *(uint16_t **)pptr;
+    __asm__ ("movzwl (%0),  %%eax\n\t"
+	     "mov    %1,    %%edx\n\t"
+	     "shl    $0x10, %%edx\n\t"
+             "or     %%eax, %%edx\n\t"
+	     "xor    %%eax, %%eax\n\t"
+             "cmp    $0x10000,%1\n\t"
+             "cmovb  %%edx, %1\n\t"
+	     "sbb    %%eax, %%eax\n\t"
+	     "andl   $2,    %%eax\n\t"
+	     "addq   %%rax, %0\n\t"
+             : "=r" (ptr), "=r" (x)
+             : "0"  (ptr), "1"  (x)
+             : "eax", "edx"
+             );
     *pptr = (uint8_t *)ptr;
 #endif
 
