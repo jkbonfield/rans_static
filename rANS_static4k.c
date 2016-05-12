@@ -518,9 +518,14 @@ static void hist8(unsigned char *in, unsigned int in_size, int F0[256]) {
 	F0[i] += F1[i] + F2[i] + F3[i] + F4[i] + F5[i] + F6[i] + F7[i];
 }
 
+unsigned int rans_compress_bound(unsigned int size, int order) {
+    return order == 0
+	? 1.05*size + 257*3 + 4
+	: 1.05*size + 257*257*3 + 4;
+}
+
 unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
-				unsigned int *out_size) {
-    unsigned char *out_buf = malloc(1.05*in_size + 257*257*3 + 4);
+				unsigned char *out, unsigned int *out_size) {
     unsigned char *cp, *out_end;
     RansEncSymbol syms[256];
     RansState rans0;
@@ -531,11 +536,16 @@ unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
     int F[256+MAGIC] = {0}, i, j, tab_size, rle, x, fsum = 0;
     int m = 0, M = 0;
     uint64_t tr;
+    int bound = rans_compress_bound(in_size,0);
 
-    if (!out_buf)
+    if (!out) {
+	*out_size = bound;
+	out = malloc(*out_size);
+    }
+    if (!out || bound > *out_size)
 	return NULL;
 
-    ptr = out_end = out_buf + (int)(1.05*in_size) + 257*257*3 + 4;
+    ptr = out_end = out + bound;
 
     // Compute statistics
     hist8(in, in_size, F);
@@ -564,7 +574,7 @@ unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
     assert(F[M]>0);
 
     // Encode statistics.
-    cp = out_buf+4;
+    cp = out+4;
 
     for (x = rle = j = 0; j < 256; j++) {
 	if (F[j]) {
@@ -595,8 +605,8 @@ unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
     }
     *cp++ = 0;
 
-    //write(2, out_buf+4, cp-(out_buf+4));
-    tab_size = cp-out_buf;
+    //write(2, out+4, cp-(out+4));
+    tab_size = cp-out;
 
     RansEncInit(&rans0);
     RansEncInit(&rans1);
@@ -630,15 +640,15 @@ unsigned char *rans_compress_O0(unsigned char *in, unsigned int in_size,
     // Finalise block size and return it
     *out_size = (out_end - ptr) + tab_size;
 
-    cp = out_buf;
+    cp = out;
     *cp++ = (in_size>> 0) & 0xff;
     *cp++ = (in_size>> 8) & 0xff;
     *cp++ = (in_size>>16) & 0xff;
     *cp++ = (in_size>>24) & 0xff;
 
-    memmove(out_buf + tab_size, ptr, out_end-ptr);
+    memmove(out + tab_size, ptr, out_end-ptr);
 
-    return out_buf;
+    return out;
 }
 
 typedef struct {
@@ -646,7 +656,7 @@ typedef struct {
 } ari_decoder;
 
 unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
-				  unsigned int *out_size) {
+				  unsigned char *out, unsigned int *out_size) {
     /* Load in the static tables */
     unsigned char *cp = in + 4;
     const uint32_t mask = (1u << TF_SHIFT)-1;
@@ -659,8 +669,11 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
     uint32_t sbase[TOTFREQ+16]; // faster, but only needs uint16_t
 
     out_sz = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
-    out_buf = malloc(out_sz);
-    if (!out_buf)
+    if (!out) {
+	out = malloc(out_sz);
+	*out_size = out_sz;
+    }
+    if (!out || out_sz > *out_size)
 	return NULL;
 
     // Precompute reverse lookup of frequency.
@@ -702,19 +715,19 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
     int out_end = (out_sz&~3);
     for (i=0; i < out_end; i+=4) {
 	m[0] = R[0] & mask;
-        out_buf[i+0] = ssym[m[0]];
+        out[i+0] = ssym[m[0]];
         R[0] = sfreq[m[0]] * (R[0] >> TF_SHIFT) + sbase[m[0]];
 
         m[1] = R[1] & mask;
-	out_buf[i+1] = ssym[m[1]];
+	out[i+1] = ssym[m[1]];
         R[1] = sfreq[m[1]] * (R[1] >> TF_SHIFT) + sbase[m[1]];
 
         m[2] = R[2] & mask;
-	out_buf[i+2] = ssym[m[2]];
+	out[i+2] = ssym[m[2]];
         R[2] = sfreq[m[2]] * (R[2] >> TF_SHIFT) + sbase[m[2]];
 
         m[3] = R[3] & mask;
-	out_buf[i+3] = ssym[m[3]];
+	out[i+3] = ssym[m[3]];
         R[3] = sfreq[m[3]] * (R[3] >> TF_SHIFT) + sbase[m[3]];
 
 #ifdef __x86_64
@@ -730,17 +743,17 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
 
     switch(out_sz&3) {
     case 3:
-        out_buf[out_end + 2] = ssym[R[2] & mask];
+        out[out_end + 2] = ssym[R[2] & mask];
     case 2:
-        out_buf[out_end + 1] = ssym[R[1] & mask];
+        out[out_end + 1] = ssym[R[1] & mask];
     case 1:
-        out_buf[out_end] = ssym[R[0] & mask];
+        out[out_end] = ssym[R[0] & mask];
     default:
         break;
     }
 
     *out_size = out_sz;
-    return out_buf;
+    return out;
 }
 
 static void hist1_4(unsigned char *in, unsigned int in_size,
@@ -790,17 +803,21 @@ static void hist1_4(unsigned char *in, unsigned int in_size,
 }
 
 unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
-				unsigned int *out_size) {
-    unsigned char *out_buf = malloc(1.05*in_size + 257*257*3 + 4);
-    unsigned char *cp = out_buf, *out_end;
+				unsigned char *out, unsigned int *out_size) {
+    unsigned char *cp, *out_end;
     unsigned int tab_size, rle_i, rle_j;
     RansEncSymbol syms[256][256];
+    int bound = rans_compress_bound(in_size,1);
 
-    if (!out_buf)
+    if (!out) {
+	*out_size = bound;
+	out = malloc(*out_size);
+    }
+    if (!out || bound > *out_size)
 	return NULL;
 
-    out_end = out_buf + (int)(1.05*in_size) + 257*257*3 + 4;
-    cp = out_buf+4;
+    out_end = out + (int)(1.05*in_size) + 257*257*3 + 4;
+    cp = out+4;
 
     int F[256][256] = {{0}}, T[256+MAGIC] = {0}, i, j;
 
@@ -896,8 +913,8 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
     }
     *cp++ = 0;
 
-    //write(2, out_buf+4, cp-(out_buf+4));
-    tab_size = cp - out_buf;
+    //write(2, out+4, cp-(out+4));
+    tab_size = cp - out;
     assert(tab_size < 257*257*3);
     
     RansState rans0, rans1, rans2, rans3;
@@ -961,31 +978,33 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 
     *out_size = (out_end - ptr) + tab_size;
 
-    cp = out_buf;
+    cp = out;
     *cp++ = (in_size>> 0) & 0xff;
     *cp++ = (in_size>> 8) & 0xff;
     *cp++ = (in_size>>16) & 0xff;
     *cp++ = (in_size>>24) & 0xff;
 
-    memmove(out_buf + tab_size, ptr, out_end-ptr);
+    memmove(out + tab_size, ptr, out_end-ptr);
 
-    return out_buf;
+    return out;
 }
 
 unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
-				  unsigned int *out_size) {
+				  unsigned char *out, unsigned int *out_size) {
     /* Load in the static tables */
     unsigned char *cp = in + 4;
     int i, j = -999, x, out_sz, rle_i, rle_j;
-    char *out_buf;
     ari_decoder D[256];
     RansDecSymbol32 syms[256][256];
     
     //memset(D, 0, 256*sizeof(*D));
 
     out_sz = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
-    out_buf = malloc(out_sz);
-    if (!out_buf)
+    if (!out) {
+	out = malloc(out_sz);
+	*out_size = out_sz;
+    }
+    if (!out || out_sz > *out_size)
 	return NULL;
 
     //fprintf(stderr, "out_sz=%d\n", out_sz);
@@ -1069,10 +1088,10 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     uint8_t cc3 = D[l3].R[R[3] & ((1u << TF_SHIFT)-1)];
 
     for (; i4[0] < isz4; i4[0]++, i4[1]++, i4[2]++, i4[3]++) {
-	out_buf[i4[0]] = cc0;
-	out_buf[i4[1]] = cc1;
-	out_buf[i4[2]] = cc2;
-	out_buf[i4[3]] = cc3;
+	out[i4[0]] = cc0;
+	out[i4[1]] = cc1;
+	out[i4[2]] = cc2;
+	out[i4[3]] = cc3;
 
 	{
 	    uint32_t m[4];
@@ -1116,7 +1135,7 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     // Remainder
     for (; i4[3] < out_sz; i4[3]++) {
 	unsigned char c3 = D[l3].R[RansDecGet(&rans3, TF_SHIFT)];
-	out_buf[i4[3]] = c3;
+	out[i4[3]] = c3;
 	RansDecAdvanceSymbol32(&rans3, &ptr, &syms[l3][c3], TF_SHIFT);
 	l3 = c3;
     }
@@ -1126,7 +1145,7 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 //    for (i = 0; i < 256; i++)
 //	if (D[i].R) free(D[i].R);
 
-    return (unsigned char *)out_buf;
+    return (unsigned char *)out;
 }
 
 /*-----------------------------------------------------------------------------
@@ -1135,15 +1154,34 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 unsigned char *rans_compress(unsigned char *in, unsigned int in_size,
 			     unsigned int *out_size, int order) {
     return order
-	? rans_compress_O1(in, in_size, out_size)
-	: rans_compress_O0(in, in_size, out_size);
+	? rans_compress_O1(in, in_size, NULL, out_size)
+	: rans_compress_O0(in, in_size, NULL, out_size);
+}
+
+unsigned char *rans_compress_to(unsigned char *in,  unsigned int in_size,
+				unsigned char *out, unsigned int *out_size,
+				int order) {
+    return order
+	? rans_compress_O1(in, in_size, out, out_size)
+	: rans_compress_O0(in, in_size, out, out_size);
 }
 
 unsigned char *rans_uncompress(unsigned char *in, unsigned int in_size,
 			       unsigned int *out_size, int order) {
     return order
-	? rans_uncompress_O1(in, in_size, out_size)
-	: rans_uncompress_O0(in, in_size, out_size);
+	? rans_uncompress_O1(in, in_size, NULL, out_size)
+	: rans_uncompress_O0(in, in_size, NULL, out_size);
+}
+
+/*
+ * Uncompressed to an already allocated buffer
+ */
+unsigned char *rans_uncompress_to(unsigned char *in,  unsigned int in_size,
+				  unsigned char *out, unsigned int *out_size,
+				  int order) {
+    return order
+	? rans_uncompress_O1(in, in_size, out, out_size)
+	: rans_uncompress_O0(in, in_size, out, out_size);
 }
 
 /*-----------------------------------------------------------------------------
@@ -1154,7 +1192,7 @@ int main(int argc, char **argv) {
     unsigned char in_buf[BLK_SIZE2+257*257*3];
     int decode = 0, test = 0;
     FILE *infp = stdin, *outfp = stdout;
-    struct timeval tv1, tv2, tv3;
+    struct timeval tv1, tv2, tv3, tv4;
     size_t bytes = 0;
 
     extern char *optarg;
@@ -1202,49 +1240,64 @@ int main(int argc, char **argv) {
 	    unsigned char *blk;
 	    uint32_t sz;
 	} blocks;
-	blocks *b = NULL, *bc;
+	blocks *b = NULL, *bc = NULL, *bu = NULL;
 	int nb = 0, i;
 	
 	while ((len = fread(in_buf, 1, BLK_SIZE, infp)) != 0) {
 	    // inefficient, but it'll do for testing
 	    b = realloc(b, (nb+1)*sizeof(*b));
+	    bu = realloc(bu, (nb+1)*sizeof(*bu));
+	    bc = realloc(bc, (nb+1)*sizeof(*bc));
 	    b[nb].blk = malloc(len);
 	    b[nb].sz = len;
 	    memcpy(b[nb].blk, in_buf, len);
+	    bc[nb].sz = rans_compress_bound(BLK_SIZE, order);
+	    bc[nb].blk = malloc(bc[nb].sz);
+	    bu[nb].sz = BLK_SIZE;
+	    bu[nb].blk = malloc(BLK_SIZE);
 	    nb++;
 	    in_sz += len;
 	}
 
 	int trials = 10;
 	while (trials--) {
+	    // Warmup
+	    for (i = 0; i < nb; i++) memset(bc[i].blk, 0, bc[i].sz);
+
 	    gettimeofday(&tv1, NULL);
 
-	    bc = malloc(nb*sizeof(*bc));
 	    out_sz = 0;
 	    for (i = 0; i < nb; i++) {
-		bc[i].blk = rans_compress(b[i].blk, b[i].sz, &bc[i].sz, order);
-		out_sz += 5 + bc[i].sz;
-		bc[i].blk = realloc(bc[i].blk, bc[i].sz);
+		unsigned int csz = bc[i].sz;
+		bc[i].blk = rans_compress_to(b[i].blk, b[i].sz, bc[i].blk, &csz, order);
+		assert(csz <= bc[i].sz);
+		out_sz += 5 + csz;
 	    }
-	
+
 	    gettimeofday(&tv2, NULL);
 
-	    for (i = 0; i < nb; i++) {
-		unsigned char *out;
-		uint32_t usz;
-		out = rans_uncompress(bc[i].blk, bc[i].sz, &usz, order);
-		free(out);
-		free(bc[i].blk);
-	    }
-	    free(bc);
+	    // Warmup
+	    for (i = 0; i < nb; i++) memset(bu[i].blk, 0, BLK_SIZE);
 
 	    gettimeofday(&tv3, NULL);
+
+	    for (i = 0; i < nb; i++)
+		bu[i].blk = rans_uncompress_to(bc[i].blk, bc[i].sz, bu[i].blk, &bu[i].sz, order);
+
+	    gettimeofday(&tv4, NULL);
+
+	    for (i = 0; i < nb; i++) {
+		if (b[i].sz != bu[i].sz || memcmp(b[i].blk, bu[i].blk, b[i].sz))
+		    fprintf(stderr, "Mismatch in block %d, sz %d/%d\n", i, b[i].sz, bu[i].sz);
+		//free(bc[i].blk);
+		//free(bu[i].blk);
+	    }
 
 	    fprintf(stderr, "%5.1f MB/s enc, %5.1f MB/s dec\t %lld bytes -> %lld bytes\n",
 		    (double)in_sz / ((long)(tv2.tv_sec - tv1.tv_sec)*1000000 +
 				     tv2.tv_usec - tv1.tv_usec),
-		    (double)in_sz / ((long)(tv3.tv_sec - tv2.tv_sec)*1000000 +
-				     tv3.tv_usec - tv2.tv_usec),
+		    (double)in_sz / ((long)(tv4.tv_sec - tv3.tv_sec)*1000000 +
+				     tv4.tv_usec - tv3.tv_usec),
 		    (long long)in_sz, (long long)out_sz);
 	}
 
