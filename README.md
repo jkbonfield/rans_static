@@ -133,7 +133,7 @@ Q40 test file, order 1:
     arith_static            128.4 MB/s enc,  94.7 MB/s dec  94602182 bytes -> 43420823 bytes
     rANS_static4c           168.4 MB/s enc, 212.1 MB/s dec  94602182 bytes -> 43167683 bytes
     rANS_static4j           170.0 MB/s enc, 240.2 MB/s dec  94602182 bytes -> 43167683 bytes
-    rANS_static4k-asm       172.8 MB/s enc, 326.5 MB/s dec  94602182 bytes -> 43167683 bytes
+    rANS_static4k-asm       175.3 MB/s enc, 353.5 MB/s dec  94602182 bytes -> 43167683 bytes
     rANS_static4_16i-asm-10 199.8 MB/s enc, 401.9 MB/s dec  94602182 bytes -> 43229151 bytes
     rANS_static4_16i-asm-9  200.1 MB/s enc, 460.2 MB/s dec  94602182 bytes -> 43415360 bytes
     rANS_static64c          203.9 MB/s enc, 287.1 MB/s dec  94602182 bytes -> 43168614 bytes
@@ -143,7 +143,7 @@ Q8 test file, order 1:
     arith_static            189.2 MB/s enc, 130.4 MB/s dec  73124567 bytes -> 15860154 bytes
     rANS_static4c           208.6 MB/s enc, 269.2 MB/s dec  73124567 bytes -> 15849814 bytes
     rANS_static4j           210.5 MB/s enc, 305.1 MB/s dec  73124567 bytes -> 15849814 bytes
-    rANS_static4k-asm       212.2 MB/s enc, 403.8 MB/s dec  73124567 bytes -> 15849814 bytes
+    rANS_static4k-asm       212.3 MB/s enc, 425.3 MB/s dec  73124567 bytes -> 15849814 bytes
     rANS_static4_16i-asm-10 246.1 MB/s enc, 504.7 MB/s dec  73124567 bytes -> 15869015 bytes
     rANS_static4_16i-asm-9  247.5 MB/s enc, 508.2 MB/s dec  73124567 bytes -> 15892582 bytes
     rANS_static64c          239.2 MB/s enc, 397.6 MB/s dec  73124567 bytes -> 15850522 bytes

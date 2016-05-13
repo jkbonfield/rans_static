@@ -1147,16 +1147,378 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     return (unsigned char *)out;
 }
 
+
+//-----------------------------------------------------------------------------
+// Two level lookup into R; fine and coarse grained.
+// (Doesn't help)
+#define TOT_DIV 4
+#define TOT_CHK 155
+typedef struct {
+    unsigned char R[TOTFREQ];
+    unsigned char R2[TOTFREQ/TOT_DIV];
+} ari_decoder2;
+
+static inline int D2sym(ari_decoder2 *D, uint32_t m) {
+    return D->R[m];
+}
+
+static inline int D2sym2(ari_decoder2 *D, uint32_t m) {
+    int c = D->R2[m/TOT_DIV];
+    return c != TOT_CHK ? c : D->R[m];
+}
+
+unsigned char *rans_uncompress_O1b(unsigned char *in, unsigned int in_size,
+				   unsigned char *out, unsigned int *out_size) {
+    /* Load in the static tables */
+    unsigned char *cp = in + 4;
+    int i, j = -999, x, out_sz, rle_i, rle_j;
+    ari_decoder2 D[256];
+    RansDecSymbol32 syms[256][256];
+    
+    //memset(D, 0, 256*sizeof(*D));
+
+    out_sz = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
+    if (!out) {
+	out = malloc(out_sz);
+	*out_size = out_sz;
+    }
+    if (!out || out_sz > *out_size)
+	return NULL;
+
+    //fprintf(stderr, "out_sz=%d\n", out_sz);
+
+    //i = *cp++;
+    rle_i = 0;
+    i = *cp++;
+    do {
+	rle_j = x = 0;
+	j = *cp++;
+	do {
+	    int F, C;
+	    if ((F = *cp++) >= 128) {
+		F &= ~128;
+		F = ((F & 127) << 8) | *cp++;
+	    }
+	    C = x;
+
+	    //fprintf(stderr, "i=%d j=%d F=%d C=%d\n", i, j, F, C);
+
+	    if (!F)
+		F = TOTFREQ;
+
+	    RansDecSymbolInit32(&syms[i][j], C, F);
+
+	    /* Build reverse lookup table */
+	    //if (!D[i].R) D[i].R = (unsigned char *)malloc(TOTFREQ);
+	    memset(&D[i].R[x], j, F);
+	    x += F;
+
+	    assert(x <= TOTFREQ);
+
+	    if (!rle_j && j+1 == *cp) {
+		j = *cp++;
+		rle_j = *cp++;
+	    } else if (rle_j) {
+		rle_j--;
+		j++;
+	    } else {
+		j = *cp++;
+	    }
+	} while(j);
+
+	int y;
+	for (y = 0; y < TOTFREQ; y+=TOT_DIV) {
+	    int z, b = D[i].R[y];
+	    for (z = 0; z < TOT_DIV; z++) {
+		if (D[i].R[y+z] != b) {
+		    b = TOT_CHK;
+		    break;
+		}
+	    }
+	    D[i].R2[y/TOT_DIV] = b;
+	}
+
+	if (!rle_i && i+1 == *cp) {
+	    i = *cp++;
+	    rle_i = *cp++;
+	} else if (rle_i) {
+	    rle_i--;
+	    i++;
+	} else {
+	    i = *cp++;
+	}
+    } while (i);
+
+    // Precompute reverse lookup of frequency.
+
+    RansState rans0, rans1, rans2, rans3;
+    uint8_t *ptr = cp;
+    RansDecInit(&rans0, &ptr);
+    RansDecInit(&rans1, &ptr);
+    RansDecInit(&rans2, &ptr);
+    RansDecInit(&rans3, &ptr);
+
+    RansState R[4];
+    R[0] = rans0;
+    R[1] = rans1;
+    R[2] = rans2;
+    R[3] = rans3;
+
+    int isz4 = out_sz>>2;
+    uint32_t l0 = 0;
+    uint32_t l1 = 0;
+    uint32_t l2 = 0;
+    uint32_t l3 = 0;
+    
+    int i4[] = {0*isz4, 1*isz4, 2*isz4, 3*isz4};
+
+    uint8_t cc0 = D[l0].R[R[0] & ((1u << TF_SHIFT)-1)];
+    uint8_t cc1 = D[l1].R[R[1] & ((1u << TF_SHIFT)-1)];
+    uint8_t cc2 = D[l2].R[R[2] & ((1u << TF_SHIFT)-1)];
+    uint8_t cc3 = D[l3].R[R[3] & ((1u << TF_SHIFT)-1)];
+
+    for (; i4[0] < isz4; i4[0]++, i4[1]++, i4[2]++, i4[3]++) {
+	out[i4[0]] = cc0;
+	out[i4[1]] = cc1;
+	out[i4[2]] = cc2;
+	out[i4[3]] = cc3;
+
+	{
+	    uint32_t m[4];
+
+	    // Ordering to try and improve OoO cpu instructions
+	    m[0] = R[0] & ((1u << TF_SHIFT)-1);
+	    R[0] = syms[l0][cc0].freq * (R[0]>>TF_SHIFT);
+	    m[1] = R[1] & ((1u << TF_SHIFT)-1);
+	    R[0] += m[0] - syms[l0][cc0].start;
+	    R[1] = syms[l1][cc1].freq * (R[1]>>TF_SHIFT);
+	    m[2] = R[2] & ((1u << TF_SHIFT)-1);
+	    R[1] += m[1] - syms[l1][cc1].start;
+	    R[2] = syms[l2][cc2].freq * (R[2]>>TF_SHIFT);
+	    m[3] = R[3] & ((1u << TF_SHIFT)-1);
+	    R[3] = syms[l3][cc3].freq * (R[3]>>TF_SHIFT);
+	    R[2] += m[2] - syms[l2][cc2].start;
+	    R[3] += m[3] - syms[l3][cc3].start;
+	}
+
+	l0 = cc0;
+	l1 = cc1;
+	l2 = cc2;
+	l3 = cc3;
+
+	RansDecRenorm(&R[0], &ptr);
+	RansDecRenorm(&R[1], &ptr);
+	RansDecRenorm(&R[2], &ptr);
+	RansDecRenorm(&R[3], &ptr);
+
+//	cc0 = D[cc0].R[R[0] & ((1u << TF_SHIFT)-1)];
+//	cc1 = D[cc1].R[R[1] & ((1u << TF_SHIFT)-1)];
+//	cc2 = D[cc2].R[R[2] & ((1u << TF_SHIFT)-1)];
+//	cc3 = D[cc3].R[R[3] & ((1u << TF_SHIFT)-1)];
+
+	cc0 = D2sym2(&D[cc0], R[0] & ((1u << TF_SHIFT)-1));
+	cc1 = D2sym2(&D[cc1], R[1] & ((1u << TF_SHIFT)-1));
+	cc2 = D2sym2(&D[cc2], R[2] & ((1u << TF_SHIFT)-1));
+	cc3 = D2sym2(&D[cc3], R[3] & ((1u << TF_SHIFT)-1));
+    }
+
+    rans0 = R[0];
+    rans1 = R[1];
+    rans2 = R[2];
+    rans3 = R[3];
+
+    // Remainder
+    for (; i4[3] < out_sz; i4[3]++) {
+	unsigned char c3 = D[l3].R[RansDecGet(&rans3, TF_SHIFT)];
+	out[i4[3]] = c3;
+	RansDecAdvanceSymbol32(&rans3, &ptr, &syms[l3][c3], TF_SHIFT);
+	l3 = c3;
+    }
+    
+    *out_size = out_sz;
+
+//    for (i = 0; i < 256; i++)
+//	if (D[i].R) free(D[i].R);
+
+    return (unsigned char *)out;
+}
+
+//-----------------------------------------------------------------------------
+// Sort by symbol freq so part of D[] accessed via the first rows.
+// This trades an extra indirection via map[] with improved cache
+// locaility.
+unsigned char *rans_uncompress_O1c(unsigned char *in, unsigned int in_size,
+				  unsigned char *out, unsigned int *out_size) {
+    /* Load in the static tables */
+    unsigned char *cp = in + 4;
+    int i, j = -999, x, out_sz, rle_i, rle_j;
+    ari_decoder D[256];
+    RansDecSymbol32 syms[256][256+6];
+    int16_t map[256], map_i = 0;
+
+    memset(map, -1, 256*sizeof(*map));
+    
+    //memset(D, 0, 256*sizeof(*D));
+
+    out_sz = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
+    if (!out) {
+	out = malloc(out_sz);
+	*out_size = out_sz;
+    }
+    if (!out || out_sz > *out_size)
+	return NULL;
+
+    //fprintf(stderr, "out_sz=%d\n", out_sz);
+
+    //i = *cp++;
+    rle_i = 0;
+    i = *cp++;
+    do {
+	if (map[i] == -1)
+	    map[i] = map_i++;
+	int m_i = map[i];
+
+	rle_j = x = 0;
+	j = *cp++;
+	do {
+	    if (map[j] == -1)
+		map[j] = map_i++;
+
+	    int F, C;
+	    if ((F = *cp++) >= 128) {
+		F &= ~128;
+		F = ((F & 127) << 8) | *cp++;
+	    }
+	    C = x;
+
+	    //fprintf(stderr, "i=%d j=%d F=%d C=%d\n", i, j, F, C);
+
+	    if (!F)
+		F = TOTFREQ;
+
+	    RansDecSymbolInit32(&syms[m_i][j], C, F);
+
+	    /* Build reverse lookup table */
+	    //if (!D[i].R) D[i].R = (unsigned char *)malloc(TOTFREQ);
+	    memset(&D[m_i].R[x], j, F);
+	    x += F;
+
+	    assert(x <= TOTFREQ);
+
+	    if (!rle_j && j+1 == *cp) {
+		j = *cp++;
+		rle_j = *cp++;
+	    } else if (rle_j) {
+		rle_j--;
+		j++;
+	    } else {
+		j = *cp++;
+	    }
+	} while(j);
+
+	if (!rle_i && i+1 == *cp) {
+	    i = *cp++;
+	    rle_i = *cp++;
+	} else if (rle_i) {
+	    rle_i--;
+	    i++;
+	} else {
+	    i = *cp++;
+	}
+    } while (i);
+
+    // Precompute reverse lookup of frequency.
+
+    RansState rans0, rans1, rans2, rans3;
+    uint8_t *ptr = cp;
+    RansDecInit(&rans0, &ptr);
+    RansDecInit(&rans1, &ptr);
+    RansDecInit(&rans2, &ptr);
+    RansDecInit(&rans3, &ptr);
+
+    RansState R[4];
+    R[0] = rans0;
+    R[1] = rans1;
+    R[2] = rans2;
+    R[3] = rans3;
+
+    int isz4 = out_sz>>2;
+    uint32_t l0 = 0;
+    uint32_t l1 = 0;
+    uint32_t l2 = 0;
+    uint32_t l3 = 0;
+    
+    int i4[] = {0*isz4, 1*isz4, 2*isz4, 3*isz4};
+
+    uint8_t cc0 = D[map[l0]].R[R[0] & ((1u << TF_SHIFT)-1)];
+    uint8_t cc1 = D[map[l1]].R[R[1] & ((1u << TF_SHIFT)-1)];
+    uint8_t cc2 = D[map[l2]].R[R[2] & ((1u << TF_SHIFT)-1)];
+    uint8_t cc3 = D[map[l3]].R[R[3] & ((1u << TF_SHIFT)-1)];
+
+    for (; i4[0] < isz4; i4[0]++, i4[1]++, i4[2]++, i4[3]++) {
+	out[i4[0]] = cc0;
+	out[i4[1]] = cc1;
+	out[i4[2]] = cc2;
+	out[i4[3]] = cc3;
+
+	{
+	    uint32_t m[4];
+
+	    // Ordering to try and improve OoO cpu instructions
+	    m[0] = R[0] & ((1u << TF_SHIFT)-1);
+	    R[0] = syms[l0][cc0].freq * (R[0]>>TF_SHIFT);
+	    m[1] = R[1] & ((1u << TF_SHIFT)-1);
+	    R[0] += m[0] - syms[l0][cc0].start;
+	    R[1] = syms[l1][cc1].freq * (R[1]>>TF_SHIFT);
+	    m[2] = R[2] & ((1u << TF_SHIFT)-1);
+	    R[1] += m[1] - syms[l1][cc1].start;
+	    R[2] = syms[l2][cc2].freq * (R[2]>>TF_SHIFT);
+	    m[3] = R[3] & ((1u << TF_SHIFT)-1);
+	    R[3] = syms[l3][cc3].freq * (R[3]>>TF_SHIFT);
+	    R[2] += m[2] - syms[l2][cc2].start;
+	    R[3] += m[3] - syms[l3][cc3].start;
+	}
+
+	l0 = map[cc0];
+	l1 = map[cc1];
+	l2 = map[cc2];
+	l3 = map[cc3];
+
+	RansDecRenorm(&R[0], &ptr);
+	RansDecRenorm(&R[1], &ptr);
+	RansDecRenorm(&R[2], &ptr);
+	RansDecRenorm(&R[3], &ptr);
+
+	cc0 = D[l0].R[R[0] & ((1u << TF_SHIFT)-1)];
+	cc1 = D[l1].R[R[1] & ((1u << TF_SHIFT)-1)];
+	cc2 = D[l2].R[R[2] & ((1u << TF_SHIFT)-1)];
+	cc3 = D[l3].R[R[3] & ((1u << TF_SHIFT)-1)];
+    }
+
+    rans0 = R[0];
+    rans1 = R[1];
+    rans2 = R[2];
+    rans3 = R[3];
+
+    // Remainder
+    for (; i4[3] < out_sz; i4[3]++) {
+	unsigned char c3 = D[l3].R[RansDecGet(&rans3, TF_SHIFT)];
+	out[i4[3]] = c3;
+	RansDecAdvanceSymbol32(&rans3, &ptr, &syms[l3][c3], TF_SHIFT);
+	l3 = map[c3];
+    }
+    
+    *out_size = out_sz;
+
+//    for (i = 0; i < 256; i++)
+//	if (D[i].R) free(D[i].R);
+
+    return (unsigned char *)out;
+}
+
 /*-----------------------------------------------------------------------------
  * Simple interface to the order-0 vs order-1 encoders and decoders.
  */
-unsigned char *rans_compress(unsigned char *in, unsigned int in_size,
-			     unsigned int *out_size, int order) {
-    return order
-	? rans_compress_O1(in, in_size, NULL, out_size)
-	: rans_compress_O0(in, in_size, NULL, out_size);
-}
-
 unsigned char *rans_compress_to(unsigned char *in,  unsigned int in_size,
 				unsigned char *out, unsigned int *out_size,
 				int order) {
@@ -1165,22 +1527,24 @@ unsigned char *rans_compress_to(unsigned char *in,  unsigned int in_size,
 	: rans_compress_O0(in, in_size, out, out_size);
 }
 
-unsigned char *rans_uncompress(unsigned char *in, unsigned int in_size,
-			       unsigned int *out_size, int order) {
-    return order
-	? rans_uncompress_O1(in, in_size, NULL, out_size)
-	: rans_uncompress_O0(in, in_size, NULL, out_size);
+unsigned char *rans_compress(unsigned char *in, unsigned int in_size,
+			     unsigned int *out_size, int order) {
+    return rans_compress_to(in, in_size, NULL, out_size, order);
 }
 
-/*
- * Uncompressed to an already allocated buffer
- */
 unsigned char *rans_uncompress_to(unsigned char *in,  unsigned int in_size,
 				  unsigned char *out, unsigned int *out_size,
 				  int order) {
     return order
-	? rans_uncompress_O1(in, in_size, out, out_size)
+	// O1 vs O1c changes a lot on compiler, version & cpu.
+	// Try both!
+	? rans_uncompress_O1c(in, in_size, out, out_size)
 	: rans_uncompress_O0(in, in_size, out, out_size);
+}
+
+unsigned char *rans_uncompress(unsigned char *in, unsigned int in_size,
+			       unsigned int *out_size, int order) {
+    return rans_uncompress_to(in, in_size, NULL, out_size, order);
 }
 
 /*-----------------------------------------------------------------------------
