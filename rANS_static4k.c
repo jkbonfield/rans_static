@@ -661,7 +661,6 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
     unsigned char *cp = in + 4;
     const uint32_t mask = (1u << TF_SHIFT)-1;
     int i, j, x, y, out_sz, rle;
-    unsigned char *out_buf;
     RansState R[4];
     RansState m[4];
     uint16_t sfreq[TOTFREQ+32];
@@ -816,7 +815,7 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
     if (!out || bound > *out_size)
 	return NULL;
 
-    out_end = out + (int)(1.05*in_size) + 257*257*3 + 4;
+    out_end = out + bound;
     cp = out+4;
 
     int F[256][256] = {{0}}, T[256+MAGIC] = {0}, i, j;
