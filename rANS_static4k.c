@@ -994,7 +994,7 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     unsigned char *cp = in + 4;
     int i, j = -999, x, out_sz, rle_i, rle_j;
     ari_decoder D[256];
-    RansDecSymbol32 syms[256][256];
+    RansDecSymbol32 syms[256][256+6];
     
     //memset(D, 0, 256*sizeof(*D));
 
@@ -1115,10 +1115,15 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 	l2 = cc2;
 	l3 = cc3;
 
+#ifdef __x86_64
+	RansDecRenorm2(&R[0], &R[1], &ptr);
+	RansDecRenorm2(&R[2], &R[3], &ptr);
+#else
 	RansDecRenorm(&R[0], &ptr);
 	RansDecRenorm(&R[1], &ptr);
 	RansDecRenorm(&R[2], &ptr);
 	RansDecRenorm(&R[3], &ptr);
+#endif
 
 	cc0 = D[cc0].R[R[0] & ((1u << TF_SHIFT)-1)];
 	cc1 = D[cc1].R[R[1] & ((1u << TF_SHIFT)-1)];
@@ -1173,7 +1178,7 @@ unsigned char *rans_uncompress_O1b(unsigned char *in, unsigned int in_size,
     unsigned char *cp = in + 4;
     int i, j = -999, x, out_sz, rle_i, rle_j;
     ari_decoder2 D[256];
-    RansDecSymbol32 syms[256][256];
+    RansDecSymbol32 syms[256][256+6];
     
     //memset(D, 0, 256*sizeof(*D));
 
@@ -1306,10 +1311,15 @@ unsigned char *rans_uncompress_O1b(unsigned char *in, unsigned int in_size,
 	l2 = cc2;
 	l3 = cc3;
 
+#ifdef __x86_64
+	RansDecRenorm2(&R[0], &R[1], &ptr);
+	RansDecRenorm2(&R[2], &R[3], &ptr);
+#else
 	RansDecRenorm(&R[0], &ptr);
 	RansDecRenorm(&R[1], &ptr);
 	RansDecRenorm(&R[2], &ptr);
 	RansDecRenorm(&R[3], &ptr);
+#endif
 
 //	cc0 = D[cc0].R[R[0] & ((1u << TF_SHIFT)-1)];
 //	cc1 = D[cc1].R[R[1] & ((1u << TF_SHIFT)-1)];
@@ -1484,10 +1494,15 @@ unsigned char *rans_uncompress_O1c(unsigned char *in, unsigned int in_size,
 	l2 = map[cc2];
 	l3 = map[cc3];
 
+#ifdef __x86_64
+	RansDecRenorm2(&R[0], &R[1], &ptr);
+	RansDecRenorm2(&R[2], &R[3], &ptr);
+#else
 	RansDecRenorm(&R[0], &ptr);
 	RansDecRenorm(&R[1], &ptr);
 	RansDecRenorm(&R[2], &ptr);
 	RansDecRenorm(&R[3], &ptr);
+#endif
 
 	cc0 = D[l0].R[R[0] & ((1u << TF_SHIFT)-1)];
 	cc1 = D[l1].R[R[1] & ((1u << TF_SHIFT)-1)];
