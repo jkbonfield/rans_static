@@ -403,41 +403,12 @@ static inline void RansDecRenorm2(RansState* r1, RansState* r2, uint8_t** pptr) 
     *r2 = x2;
 }
 
-static inline void RansDecRenormSafe(RansState* r, uint8_t** pptr, uint8_t *ptr_end)
-{
-    uint32_t x = *r;
-    uint8_t* ptr = *pptr;
-    if (x >= RANS_BYTE_L || ptr >= ptr_end) return;
-    x = (x << 8) | *ptr++;
-    if (x < RANS_BYTE_L && ptr < ptr_end)
-	x = (x << 8) | *ptr++;
-    *pptr = ptr;
-    *r = x;
-}
-
 #else /* __x86_64 */
 
 static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
 {
     // renormalize
     uint32_t x = *r;
-
-#ifdef BRANCHLESS
-
-// Branchless, best, but only faster on complex data on Intel i5+
-    uint32_t ja = !(x & 0xffff8000);
-    uint32_t jb = !(x & 0xff800000);
-    uint32_t j = ja+jb;
-    uint8_t* ptr = *pptr;
-    uint32_t xx[] = {0, 255};
-
-    x = x << (j<<3);
-    x |= (ptr[0] & xx[jb]) << ja*8;
-    x |=  ptr[1] & xx[ja];
-
-    *pptr = ptr + j;
-
-#else
 
 #ifdef __clang__
     // Generates cmov instructions on clang, but alas not gcc
@@ -456,11 +427,27 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
     *pptr = ptr;
 #endif /* __clang__ */
 
-#endif /* BRANCHELESS */
-
     *r = x;
 }
+
+static inline void RansDecRenorm2(RansState* r1, RansState* r2, uint8_t** pptr) {
+    RansDecRenorm(r1, pptr);
+    RansDecRenorm(r2, pptr);
+}
+
 #endif /* __x86_64 */
+
+static inline void RansDecRenormSafe(RansState* r, uint8_t** pptr, uint8_t *ptr_end)
+{
+    uint32_t x = *r;
+    uint8_t* ptr = *pptr;
+    if (x >= RANS_BYTE_L || ptr >= ptr_end) return;
+    x = (x << 8) | *ptr++;
+    if (x < RANS_BYTE_L && ptr < ptr_end)
+	x = (x << 8) | *ptr++;
+    *pptr = ptr;
+    *r = x;
+}
 
 static inline void RansDecSymbolInit32(RansDecSymbol32* s, uint32_t start, uint32_t freq)
 {
@@ -744,15 +731,8 @@ unsigned char *rans_uncompress_O0(unsigned char *in, unsigned int in_size,
         R[3] = sfreq[m[3]] * (R[3] >> TF_SHIFT) + sbase[m[3]];
 
 	if (cp < cp_end) {
-#ifdef __x86_64
 	    RansDecRenorm2(&R[0], &R[1], &cp);
 	    RansDecRenorm2(&R[2], &R[3], &cp);
-#else
-	    RansDecRenorm(&R[0], &cp);
-	    RansDecRenorm(&R[1], &cp);
-	    RansDecRenorm(&R[2], &cp);
-	    RansDecRenorm(&R[3], &cp);
-#endif
 	} else {
 	    RansDecRenormSafe(&R[0], &cp, cp_end+8);
 	    RansDecRenormSafe(&R[1], &cp, cp_end+8);
@@ -1150,15 +1130,8 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
 	l3 = map[cc3];
 
 	if (ptr < ptr_end) {
-#ifdef __x86_64
 	    RansDecRenorm2(&R[0], &R[1], &ptr);
 	    RansDecRenorm2(&R[2], &R[3], &ptr);
-#else
-	    RansDecRenorm(&R[0], &ptr);
-	    RansDecRenorm(&R[1], &ptr);
-	    RansDecRenorm(&R[2], &ptr);
-	    RansDecRenorm(&R[3], &ptr);
-#endif
 	} else {
 	    RansDecRenormSafe(&R[0], &ptr, ptr_end+8);
 	    RansDecRenormSafe(&R[1], &ptr, ptr_end+8);
