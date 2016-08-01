@@ -48,8 +48,6 @@
 #include <float.h>
 #include <sys/time.h>
 
-#define TEST_MAIN
-
 #define ABS(a) ((a)>0?(a):-(a))
 #define BLK_SIZE 1000000
 
