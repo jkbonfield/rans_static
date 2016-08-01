@@ -63,10 +63,10 @@ Usage
 -----
 
 The rANS_test.c file builds the rANS_static test application.  This
-has -1 and -2 parameters to control 1 and 2 byte (4x8 and 4x16)
-renormalisation values, using the code above.  It is also possible to
-build rANS_static4c, rANS_static4j and rANS_static64c test executables
-with "make old", but these are included only for testing older code
+has -8 and -16 parameters to control 8 and 16 bit renormalisation
+values, using the code above.  It is also possible to build
+rANS_static4c, rANS_static4j and rANS_static64c test executables with
+"make old", but these are included only for testing older code
 variants.
 
 Order 0 encoding and decoding
@@ -109,7 +109,7 @@ Tested on an "Intel(R) Core(TM) i5-4570 CPU @ 3.20GHz" (from
 /proc/cpuinfo on Ubuntu Trusty).
 
 rANS_static4x8 and rANS_static4x16 refer to the source/algorithm
-files, tested by rANS_static -1 and rANS_static -2 executables
+files, tested by rANS_static -8 and rANS_static -16 executables
 respectively.
 
 rANS_static4x16-10 vs rANS_static4x16-9 is a change from 10 to 9 for

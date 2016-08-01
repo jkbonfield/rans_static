@@ -23,12 +23,12 @@ int main(int argc, char **argv) {
     FILE *infp = stdin, *outfp = stdout;
     struct timeval tv1, tv2, tv3, tv4;
     size_t bytes = 0;
-    int renorm_size=2;
+    int renorm_size=0;
 
     extern char *optarg;
     extern int optind;
 
-    while ((opt = getopt(argc, argv, "o:dt12")) != -1) {
+    while ((opt = getopt(argc, argv, "o:dt186")) != -1) {
 	switch (opt) {
 	case 'o':
 	    order = atoi(optarg);
@@ -42,11 +42,14 @@ int main(int argc, char **argv) {
 	    test = 1;
 	    break;
 
-	case '1': case '2':
-	    renorm_size = opt - '0';
+	case '1': case '6': case '8':
+	    renorm_size = renorm_size*10 + opt - '0';
 	    break;
 	}
     }
+
+    if (!renorm_size) renorm_size = 16;
+    printf("renorm_size=%d\n", renorm_size);
 
     order = order ? 1 : 0; // Only support O(0) and O(1)
 
