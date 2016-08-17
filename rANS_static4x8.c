@@ -557,10 +557,23 @@ unsigned char *rans_compress_O0_4x8(unsigned char *in, unsigned int in_size,
     }
 
     fsum++;
-    if (fsum < TOTFREQ)
-	F[M] += TOTFREQ-fsum;
-    else
-	F[M] -= fsum-TOTFREQ;
+    int adjust = TOTFREQ - fsum;
+    if (adjust > 0) {
+	F[M] += adjust;
+    } else if (adjust < 0) {
+	if (F[M] > -adjust) {
+	    F[M] += adjust;
+	} else {
+	    adjust += F[M]-1;
+	    F[M] = 1;
+	    for (j = 0; adjust && j < 256; j++) {
+		if (F[j] > 1) {
+		    adjust += F[j]-1;
+		    F[j] = 1;
+		}
+	    }
+	}
+    }
 
     //printf("F[%d]=%d\n", M, F[M]);
     assert(F[M]>0);
@@ -848,10 +861,27 @@ unsigned char *rans_compress_O1_4x8(unsigned char *in, unsigned int in_size,
 	}
 
 	t2++;
-	if (t2 < TOTFREQ)
-	    F[i][M] += TOTFREQ-t2;
-	else
-	    F[i][M] -= t2-TOTFREQ;
+
+	int adjust = TOTFREQ-t2;
+	if (adjust > 0) {
+	    // Boost most common
+	    F[i][M] += adjust;
+	} else if (adjust < 0) {
+	    // Reduce highest and distribute remainder
+	    if (F[i][M] > -adjust) {
+		F[i][M] += adjust;
+	    } else {
+		adjust += F[i][M]-1;
+		F[i][M] = 1;
+
+		for (j = 0; adjust && j < 256; j++) {
+		    if (F[i][j] > 1) {
+			adjust += F[i][j]-1;
+			F[i][j] = 1;
+		    }
+		}
+	    }
+	}
 
 	// Store frequency table
 	// i

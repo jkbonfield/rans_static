@@ -503,11 +503,24 @@ unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
 	fsum += F[j];
     }
 
-    fsum++;
-    if (fsum < TOTFREQ)
-	F[M] += TOTFREQ-fsum;
-    else
-	F[M] -= fsum-TOTFREQ;
+    fsum++; // not needed, but can't remove without removing assert x<TOTFREQ (in old code)
+    int adjust = TOTFREQ - fsum;
+    if (adjust > 0) {
+	F[M] += adjust;
+    } else if (adjust < 0) {
+	if (F[M] > -adjust) {
+	    F[M] += adjust;
+	} else {
+	    adjust += F[M]-1;
+	    F[M] = 1;
+	    for (j = 0; adjust && j < 256; j++) {
+		if (F[j] > 1) {
+		    adjust += F[j]-1;
+		    F[j] = 1;
+		}
+	    }
+	}
+    }
 
     //printf("F[%d]=%d\n", M, F[M]);
     assert(F[M]>0);
@@ -811,6 +824,7 @@ unsigned char *rans_compress_O1_4x16(unsigned char *in, unsigned int in_size,
 
 	//uint64_t p = (TOTFREQ * TOTFREQ) / t;
 	double p = ((double)TOTFREQ_O1)/T[i];
+
 	for (t2 = m = M = j = 0; j < 256; j++) {
 	    if (!F[i][j])
 		continue;
@@ -818,17 +832,33 @@ unsigned char *rans_compress_O1_4x16(unsigned char *in, unsigned int in_size,
 	    if (m < F[i][j])
 		m = F[i][j], M = j;
 
-	    //if ((F[i][j] = (F[i][j] * p) / TOTFREQ) == 0)
-	    if ((F[i][j] *= p) == 0)
-		F[i][j] = 1;
+	    if ((F[i][j] *= p) <= 0)
+	        F[i][j] = 1;
 	    t2 += F[i][j];
 	}
 
-	t2++;
-	if (t2 < TOTFREQ_O1)
-	    F[i][M] += TOTFREQ_O1-t2;
-	else
-	    F[i][M] -= t2-TOTFREQ_O1;
+	//t2++;
+
+	int adjust = TOTFREQ_O1-t2;
+	if (adjust > 0) {
+	    // Boost most common
+	    F[i][M] += adjust;
+	} else if (adjust < 0) {
+	    // Reduce highest and distribute remainder
+	    if (F[i][M] > -adjust) {
+		F[i][M] += adjust;
+	    } else {
+		adjust += F[i][M]-1;
+		F[i][M] = 1;
+
+		for (j = 0; adjust && j < 256; j++) {
+		    if (F[i][j] > 1) {
+			adjust += F[i][j]-1;
+			F[i][j] = 1;
+		    }
+		}
+	    }
+	}
 
 	// Store frequency table
 	// i
