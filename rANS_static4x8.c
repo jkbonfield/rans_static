@@ -527,7 +527,6 @@ unsigned char *rans_compress_O0_4x8(unsigned char *in, unsigned int in_size,
     uint8_t* ptr;
     int F[256+MAGIC] = {0}, i, j, tab_size, rle, x, fsum = 0;
     int m = 0, M = 0;
-    uint64_t tr;
     int bound = rans_compress_bound_4x8(in_size,0);
 
     if (!out) {
@@ -541,7 +540,7 @@ unsigned char *rans_compress_O0_4x8(unsigned char *in, unsigned int in_size,
 
     // Compute statistics
     hist8(in, in_size, F);
-    tr = ((uint64_t)TOTFREQ<<31)/in_size + (1<<30)/in_size;
+    double p = (double)TOTFREQ/(double)in_size;
 
     // Normalise so T[i] == TOTFREQ
     for (m = M = j = 0; j < 256; j++) {
@@ -551,8 +550,9 @@ unsigned char *rans_compress_O0_4x8(unsigned char *in, unsigned int in_size,
 	if (m < F[j])
 	    m = F[j], M = j;
 
-	if ((F[j] = (F[j]*tr)>>31) == 0)
+	if ((F[j] = F[j]*p+0.499) == 0)
 	    F[j] = 1;
+
 	fsum += F[j];
     }
 
@@ -567,10 +567,12 @@ unsigned char *rans_compress_O0_4x8(unsigned char *in, unsigned int in_size,
 	    adjust += F[M]-1;
 	    F[M] = 1;
 	    for (j = 0; adjust && j < 256; j++) {
-		if (F[j] > 1) {
-		    adjust += F[j]-1;
-		    F[j] = 1;
-		}
+		if (F[j] < 2) continue;
+
+		int d = F[j] > -adjust;
+		int m = d ? adjust : 1-F[j];
+		F[j]   += m;
+		adjust -= m;
 	    }
 	}
     }
@@ -594,7 +596,6 @@ unsigned char *rans_compress_O0_4x8(unsigned char *in, unsigned int in_size,
 		    rle -= j+1;
 		    *cp++ = rle;
 		}
-		//fprintf(stderr, "%d: %d %d\n", j, rle, N[j]);
 	    }
 	    
 	    // F[j]
@@ -845,7 +846,6 @@ unsigned char *rans_compress_O1_4x8(unsigned char *in, unsigned int in_size,
 	if (T[i] == 0)
 	    continue;
 
-	//uint64_t p = (TOTFREQ * TOTFREQ) / t;
 	double p = ((double)TOTFREQ)/T[i];
 	for (t2 = m = M = j = 0; j < 256; j++) {
 	    if (!F[i][j])
@@ -854,7 +854,6 @@ unsigned char *rans_compress_O1_4x8(unsigned char *in, unsigned int in_size,
 	    if (m < F[i][j])
 		m = F[i][j], M = j;
 
-	    //if ((F[i][j] = (F[i][j] * p) / TOTFREQ) == 0)
 	    if ((F[i][j] *= p) == 0)
 		F[i][j] = 1;
 	    t2 += F[i][j];
@@ -875,10 +874,12 @@ unsigned char *rans_compress_O1_4x8(unsigned char *in, unsigned int in_size,
 		F[i][M] = 1;
 
 		for (j = 0; adjust && j < 256; j++) {
-		    if (F[i][j] > 1) {
-			adjust += F[i][j]-1;
-			F[i][j] = 1;
-		    }
+		    if (F[i][j] < 2) continue;
+
+		    int d = F[i][j] > -adjust;
+		    int m = d ? adjust : 1-F[i][j];
+		    F[i][j]   += m;
+		    adjust -= m;
 		}
 	    }
 	}
