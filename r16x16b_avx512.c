@@ -511,7 +511,6 @@ unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
     uint8_t* ptr;
     int F[256+MAGIC] = {0}, i, j, tab_size, rle, x, fsum = 0;
     int m = 0, M = 0;
-    int tabsz;
     int bound = rans_compress_bound_4x16(in_size,0, NULL), z;
 
     if (!out) {
@@ -640,8 +639,8 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
     /* Load in the static tables */
     unsigned char *cp = in + 4;
     int i, j, x, y, out_sz, rle;
-    uint16_t sfreq[TOTFREQ+32];
-    uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
+    //uint16_t sfreq[TOTFREQ+32];
+    //uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
     uint8_t  ssym [TOTFREQ+64]; // faster to use 16-bit on clang
 
     uint32_t s3[TOTFREQ]; // For TF_SHIFT <= 12
@@ -667,8 +666,8 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
 
         for (y = 0; y < F; y++) {
 	  ssym [y + C] = j;
-	  sfreq[y + C] = F;
-	  sbase[y + C] = y;
+	  //sfreq[y + C] = F;
+	  //sbase[y + C] = y;
 	  s3[y+C] = (((uint32_t)F)<<(TF_SHIFT+8))|(y<<8)|j;
         }
 	x += F;
@@ -716,7 +715,7 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
       //for (z = 0; z < 16; z++) {
       //uint32_t S = s3[R[z] & mask];
       __m512i masked = _mm512_and_epi32(R, maskv);
-      __m512i S = _mm512_i32gather_epi32(masked, s3, sizeof(*s3));
+      __m512i S = _mm512_i32gather_epi32(masked, (int *)s3, sizeof(*s3));
       __m512i renorm_words = _mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *) (sp+offset))); // next 16 words
 
       //uint16_t f = S>>(TF_SHIFT+8), b = (S>>8) & mask;

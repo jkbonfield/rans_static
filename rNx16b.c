@@ -411,7 +411,6 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
 #include <string.h>
 #include <sys/time.h>
 #include "r16N.h"
-#include "permute.h"
 
 #define TF_SHIFT 12
 #define TOTFREQ (1<<TF_SHIFT)
@@ -493,7 +492,6 @@ unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
     uint8_t* ptr;
     int F[256+MAGIC] = {0}, i, j, tab_size, rle, x, fsum = 0;
     int m = 0, M = 0;
-    int tabsz;
     int bound = rans_compress_bound_4x16(in_size,0, NULL), z;
 
     if (!out) {
@@ -622,8 +620,8 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
     /* Load in the static tables */
     unsigned char *cp = in + 4;
     int i, j, x, y, out_sz, rle;
-    uint16_t sfreq[TOTFREQ+32];
-    uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
+    //uint16_t sfreq[TOTFREQ+32];
+    //uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
     uint8_t  ssym [TOTFREQ+64]; // faster to use 16-bit on clang
 
     uint32_t s3[TOTFREQ]; // For TF_SHIFT <= 12
@@ -649,8 +647,8 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
 
         for (y = 0; y < F; y++) {
 	  ssym [y + C] = j;
-	  sfreq[y + C] = F;
-	  sbase[y + C] = y;
+	  //sfreq[y + C] = F;
+	  //sbase[y + C] = y;
 	  s3[y+C] = (((uint32_t)F)<<(TF_SHIFT+8))|(y<<8)|j;
         }
 	x += F;
@@ -674,11 +672,8 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
     for (z = 0; z < NX; z++)
       RansDecInit(&R[z], &cp);
 
-    uint16_t *sp = (uint16_t *)cp;
-
     int out_end = (out_sz&~(NX-1));
     const uint32_t mask = (1u << TF_SHIFT)-1;
-    int offset = 0;
 
     for (i=0; i < out_end; i+=NX) {
 #pragma omp simd
@@ -961,7 +956,7 @@ unsigned char *rans_uncompress_O1_4x16(unsigned char *in, unsigned int in_size,
     sb_t sfb[256][TOTFREQ_O1+32];
     // uint16_t for ssym sometimes works faster, but considter 8-bit if cache is tight
     uint16_t ssym [256][TOTFREQ_O1+32];
-    uint32_t s3[256][TOTFREQ_O1];
+    //uint32_t s3[256][TOTFREQ_O1];
     
     //memset(D, 0, 256*sizeof(*D));
 
@@ -998,7 +993,7 @@ unsigned char *rans_uncompress_O1_4x16(unsigned char *in, unsigned int in_size,
 		ssym [i][y + C] = j;
 		sfb[i][y + C].f = F;
 		sfb[i][y + C].b = y;
-		s3[i][y+C] = (((uint32_t)F)<<(TF_SHIFT_O1+8))|(y<<8)|j;
+		//s3[i][y+C] = (((uint32_t)F)<<(TF_SHIFT_O1+8))|(y<<8)|j;
 	    }
 
 	    x += F;

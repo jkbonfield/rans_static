@@ -374,32 +374,7 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
  * These are original versions without any manual loop unrolling. They
  * are easier to understand, but can be up to 2x slower.
  */
-
-static void hist1(unsigned char *in, unsigned int in_size, int F0[256]) {
-    int i;
-    for (i = 0; i < in_size; i++)
-	F0[in[i]]++;
-}
-
 #define MAGIC 8
-
-static void hist4p(unsigned char *in, unsigned int in_size, int *F0) {
-    int F1[256+MAGIC] = {0}, F2[256+MAGIC] = {0}, F3[256+MAGIC] = {0};
-    int i;
-    unsigned char *in_end4 = in + (in_size & ~4);
-    unsigned char *in_end  = in + in_size;
-    while (in < in_end4) {
-	F0[*in++]++;
-	F1[*in++]++;
-	F2[*in++]++;
-	F3[*in++]++;
-    }
-    while (in < in_end)
-	F0[*in++]++;
-
-    for (i = 0; i < 256; i++)
-	F0[i] += F1[i] + F2[i] + F3[i];
-}
 
 static void hist8(unsigned char *in, unsigned int in_size, int F0[256]) {
     int F1[256+MAGIC] = {0}, F2[256+MAGIC] = {0}, F3[256+MAGIC] = {0};
@@ -879,23 +854,11 @@ unsigned char *rans_uncompress_O0b(unsigned char *in, unsigned int in_size,
     return (unsigned char *)out_buf;
 }
 
-static void hist1_1(unsigned char *in, unsigned int in_size,
-		    int F0[256][256], int T0[256]) {
-    unsigned int last_i, i;
-    unsigned char c;
-
-    for (last_i=i=0; i<in_size; i++) {
-	F0[last_i][c = in[i]]++;
-	T0[last_i]++;
-	last_i = c;
-    }
-}
-
 static void hist1_4(unsigned char *in, unsigned int in_size,
 		    int F0[256][256], int *T0) {
     int T1[256+MAGIC] = {0}, T2[256+MAGIC] = {0}, T3[256+MAGIC] = {0};
     unsigned int idiv4 = in_size/4;
-    int i, j;
+    int i;
     unsigned char c0, c1, c2, c3;
 
     unsigned char *in0 = in + 0;
@@ -941,7 +904,7 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
 				unsigned int *out_size) {
     unsigned char *out_buf = malloc(1.05*in_size + 257*257*3 + 4);
     unsigned char *cp = out_buf, *out_end;
-    unsigned int last_i, tab_size, rle_i, rle_j;
+    unsigned int tab_size, rle_i, rle_j;
     RansEncSymbol syms[256][256];
 
     if (!out_buf)
@@ -951,7 +914,6 @@ unsigned char *rans_compress_O1(unsigned char *in, unsigned int in_size,
     cp = out_buf+4;
 
     int F[256][256] = {0}, T[256+MAGIC] = {0}, i, j;
-    unsigned char c;
 
     //memset(F, 0, 256*256*sizeof(int));
     //memset(T, 0, 256*sizeof(int));
@@ -1208,10 +1170,10 @@ unsigned char *rans_uncompress_O1(unsigned char *in, unsigned int in_size,
     R[3] = rans3;
 
     for (; i4[0] < isz4; i4[0]++, i4[1]++, i4[2]++, i4[3]++) {
-	uint32_t m[4] = {R[0] & (1u << TF_SHIFT)-1,
-			 R[1] & (1u << TF_SHIFT)-1,
-			 R[2] & (1u << TF_SHIFT)-1,
-			 R[3] & (1u << TF_SHIFT)-1};
+	uint32_t m[4] = {R[0] & ((1u << TF_SHIFT)-1),
+			 R[1] & ((1u << TF_SHIFT)-1),
+			 R[2] & ((1u << TF_SHIFT)-1),
+			 R[3] & ((1u << TF_SHIFT)-1)};
 
 	uint8_t c[4] = {D[l0].R[m[0]],
 			D[l1].R[m[1]],
@@ -1361,10 +1323,10 @@ unsigned char *rans_uncompress_O1b(unsigned char *in, unsigned int in_size,
     R[3] = rans3;
 
     for (; i4[0] < isz4; i4[0]++, i4[1]++, i4[2]++, i4[3]++) {
-	uint32_t m[4] = {R[0] & (1u << TF_SHIFT)-1,
-			 R[1] & (1u << TF_SHIFT)-1,
-			 R[2] & (1u << TF_SHIFT)-1,
-			 R[3] & (1u << TF_SHIFT)-1};
+	uint32_t m[4] = {R[0] & ((1u << TF_SHIFT)-1),
+			 R[1] & ((1u << TF_SHIFT)-1),
+			 R[2] & ((1u << TF_SHIFT)-1),
+			 R[3] & ((1u << TF_SHIFT)-1)};
 
 	uint8_t c[4] = {D[l0].R[m[0]],
 			D[l1].R[m[1]],
@@ -1524,10 +1486,8 @@ int main(int argc, char **argv) {
 	
 	    gettimeofday(&tv2, NULL);
 
-	    for (i = 0; i < nb; i++) {
-		unsigned char *out;
+	    for (i = 0; i < nb; i++)
 		bu[i].blk = rans_uncompress(bc[i].blk, bc[i].sz, &bu[i].sz, order);
-	    }
 
 	    gettimeofday(&tv3, NULL);
 

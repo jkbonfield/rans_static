@@ -632,8 +632,8 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
     /* Load in the static tables */
     unsigned char *cp = in + 4 + NX*4;
     int i, j, x, y, out_sz, rle;
-    uint16_t sfreq[TOTFREQ+32];
-    uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
+    //uint16_t sfreq[TOTFREQ+32];
+    //uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
     uint8_t  ssym [TOTFREQ+64]; // faster to use 16-bit on clang
 
     uint32_t s3[TOTFREQ] __attribute__((aligned(32))); // For TF_SHIFT <= 12
@@ -659,8 +659,8 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
 
         for (y = 0; y < F; y++) {
 	  ssym [y + C] = j;
-	  sfreq[y + C] = F;
-	  sbase[y + C] = y;
+	  //sfreq[y + C] = F;
+	  //sbase[y + C] = y;
 	  s3[y+C] = (((uint32_t)F)<<(TF_SHIFT+8))|(y<<8)|j;
         }
 	x += F;
@@ -751,7 +751,7 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
 	__m256i masked1 = _mm256_and_si256(Rv1, maskv);
 
 	//  S[z] = s3[m[z]];
-	__m256i Sv1 = _mm256_i32gather_epi32(s3, masked1, sizeof(*s3));
+	__m256i Sv1 = _mm256_i32gather_epi32((int *)s3, masked1, sizeof(*s3));
 
 	//  f[z] = S[z]>>(TF_SHIFT+8);
 	__m256i fv1 = _mm256_srli_epi32(Sv1, TF_SHIFT+8);
@@ -763,7 +763,7 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
 	Rv1 = _mm256_add_epi32(_mm256_mullo_epi32(_mm256_srli_epi32(Rv1,TF_SHIFT),fv1),bv1);
 
 	__m256i masked2 = _mm256_and_si256(Rv2, maskv);
-	__m256i Sv2 = _mm256_i32gather_epi32(s3, masked2, sizeof(*s3));
+	__m256i Sv2 = _mm256_i32gather_epi32((int *)s3, masked2, sizeof(*s3));
 	__m256i fv2 = _mm256_srli_epi32(Sv2, TF_SHIFT+8);
 	__m256i bv2 = _mm256_and_si256(_mm256_srli_epi32(Sv2, 8), maskv);
 	Rv2 = _mm256_add_epi32(_mm256_mullo_epi32(_mm256_srli_epi32(Rv2,TF_SHIFT),fv2),bv2);
@@ -843,8 +843,8 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
 	__m256i masked3 = _mm256_and_si256(Rv3, maskv);
 	__m256i masked4 = _mm256_and_si256(Rv4, maskv);
 
-	__m256i Sv3 = _mm256_i32gather_epi32(s3, masked3, sizeof(*s3));
-	__m256i Sv4 = _mm256_i32gather_epi32(s3, masked4, sizeof(*s3));
+	__m256i Sv3 = _mm256_i32gather_epi32((int *)s3, masked3, sizeof(*s3));
+	__m256i Sv4 = _mm256_i32gather_epi32((int *)s3, masked4, sizeof(*s3));
 
 	__m256i fv3 = _mm256_srli_epi32(Sv3, TF_SHIFT+8);
 	__m256i fv4 = _mm256_srli_epi32(Sv4, TF_SHIFT+8);
@@ -963,8 +963,9 @@ unsigned char *rans_compress_O1_32x16(unsigned char *in, unsigned int in_size,
     unsigned char *cp, *out_endN[NX];
     RansState ransN[NX];
     uint8_t* ptrN[NX];
-    unsigned int tab_size, rle_i, rle_j;
+    unsigned int rle_i, rle_j;
     RansEncSymbol syms[256][256];
+    int tab_size;
     int bound = rans_compress_bound_32x16(in_size,1, &tab_size), z;
 
     if (!out) {

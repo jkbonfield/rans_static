@@ -543,10 +543,7 @@ __m256i _mm256_div_epi32(__m256i a, __m256i b) {
     __m256d b2  = _mm256_cvtepi32_pd(_mm256_extracti128_si256(b, 1));
     __m128i ab2 = _mm256_cvttpd_epi32(_mm256_div_pd(a2, b2));
 
-    __m256i r;
-    r = _mm256_inserti128_si256(r, ab1, 0);
-    r = _mm256_inserti128_si256(r, ab2, 1);
-    return r;
+    return _mm256_inserti128_si256(_mm256_castsi128_si256(ab1), ab2, 1);
 }
 #endif
 
@@ -564,8 +561,9 @@ unsigned char *rans_compress_O0_32x16(unsigned char *in, unsigned int in_size,
     //uint64_t sym_mf[256], sym_bfs[256];
     //uint32_t SD[256], SC[256], SB[256], SA[256];
     uint32_t SB[256], SA[256], SD[256], SC[256];
+#ifdef FP_DIV
     uint32_t FS[256];
-    uint32_t Fx[256], Sx[256];
+#endif
 
     if (!out) {
 	*out_size = bound;
@@ -929,8 +927,8 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
     /* Load in the static tables */
     unsigned char *cp = in + 4;
     int i, j, x, y, out_sz, rle;
-    uint16_t sfreq[TOTFREQ+32];
-    uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
+    //uint16_t sfreq[TOTFREQ+32];
+    //uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
     uint8_t  ssym [TOTFREQ+64]; // faster to use 16-bit on clang
 
     uint32_t s3[TOTFREQ] __attribute__((aligned(32))); // For TF_SHIFT <= 12
@@ -956,8 +954,8 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
 
         for (y = 0; y < F; y++) {
 	  ssym [y + C] = j;
-	  sfreq[y + C] = F;
-	  sbase[y + C] = y;
+	  //sfreq[y + C] = F;
+	  //sbase[y + C] = y;
 	  s3[y+C] = (((uint32_t)F)<<(TF_SHIFT+8))|(y<<8)|j;
         }
 	x += F;
@@ -996,8 +994,8 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
 	__m256i masked2 = _mm256_and_si256(Rv2, maskv);
 
 	//  S[z] = s3[m[z]];
-	__m256i Sv1 = _mm256_i32gather_epi32(s3, masked1, sizeof(*s3));
-	__m256i Sv2 = _mm256_i32gather_epi32(s3, masked2, sizeof(*s3));
+	__m256i Sv1 = _mm256_i32gather_epi32((int *)s3, masked1, sizeof(*s3));
+	__m256i Sv2 = _mm256_i32gather_epi32((int *)s3, masked2, sizeof(*s3));
 
 	//  f[z] = S[z]>>(TF_SHIFT+8);
 	__m256i fv1 = _mm256_srli_epi32(Sv1, TF_SHIFT+8);
@@ -1060,13 +1058,13 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
 	//  m[z] = R[z] & mask;
 	//  S[z] = s3[m[z]];
 	__m256i masked3 = _mm256_and_si256(Rv3, maskv);
-	__m256i Sv3 = _mm256_i32gather_epi32(s3, masked3, sizeof(*s3));
+	__m256i Sv3 = _mm256_i32gather_epi32((int *)s3, masked3, sizeof(*s3));
 
 	*(uint64_t *)&out[i+0] = _mm256_extract_epi64(sv1, 0);
 	*(uint64_t *)&out[i+8] = _mm256_extract_epi64(sv1, 2);
 
 	__m256i masked4 = _mm256_and_si256(Rv4, maskv);
-	__m256i Sv4 = _mm256_i32gather_epi32(s3, masked4, sizeof(*s3));
+	__m256i Sv4 = _mm256_i32gather_epi32((int *)s3, masked4, sizeof(*s3));
 
 	//  f[z] = S[z]>>(TF_SHIFT+8);
 	__m256i fv3 = _mm256_srli_epi32(Sv3, TF_SHIFT+8);
@@ -1391,8 +1389,6 @@ unsigned char *rans_compress_O1_32x16(unsigned char *in, unsigned int in_size,
     LOAD(Rv, ransN);
 
     for (; iN[0] >= 0; ) {
-	uint32_t rcp_freq[NX], cmpl_freq[NX], rcp_shift[NX], x_max[NX], bias[NX];
-	uint32_t SD[NX];
 	uint32_t c[NX];
 
 	// Gather all the symbol values together in adjacent arrays.
@@ -1681,15 +1677,15 @@ unsigned char *rans_uncompress_O1_32x16(unsigned char *in, unsigned int in_size,
 	Lv4 = _mm256_slli_epi32(Lv4, TF_SHIFT_O1);
 	masked4 = _mm256_add_epi32(masked4, Lv4);
 
-	__m256i Sv1 = _mm256_i32gather_epi32(&s3[0][0], masked1, sizeof(s3[0][0]));
-	__m256i Sv2 = _mm256_i32gather_epi32(&s3[0][0], masked2, sizeof(s3[0][0]));
+	__m256i Sv1 = _mm256_i32gather_epi32((int *)&s3[0][0], masked1, sizeof(s3[0][0]));
+	__m256i Sv2 = _mm256_i32gather_epi32((int *)&s3[0][0], masked2, sizeof(s3[0][0]));
 
 	//  f[z] = S[z]>>(TF_SHIFT_O1+8);
 	__m256i fv1 = _mm256_srli_epi32(Sv1, TF_SHIFT_O1+8);
 	__m256i fv2 = _mm256_srli_epi32(Sv2, TF_SHIFT_O1+8);
 
-	__m256i Sv3 = _mm256_i32gather_epi32(&s3[0][0], masked3, sizeof(s3[0][0]));
-	__m256i Sv4 = _mm256_i32gather_epi32(&s3[0][0], masked4, sizeof(s3[0][0]));
+	__m256i Sv3 = _mm256_i32gather_epi32((int *)&s3[0][0], masked3, sizeof(s3[0][0]));
+	__m256i Sv4 = _mm256_i32gather_epi32((int *)&s3[0][0], masked4, sizeof(s3[0][0]));
 
 	__m256i fv3 = _mm256_srli_epi32(Sv3, TF_SHIFT_O1+8);
 	__m256i fv4 = _mm256_srli_epi32(Sv4, TF_SHIFT_O1+8);

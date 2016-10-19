@@ -656,8 +656,8 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
     /* Load in the static tables */
     unsigned char *cp = in + 4 + NX*4;
     int i, j, x, y, out_sz, rle;
-    uint16_t sfreq[TOTFREQ+32];
-    uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
+    //uint16_t sfreq[TOTFREQ+32];
+    //uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
     uint8_t  ssym [TOTFREQ+64]; // faster to use 16-bit on clang
 
     uint32_t s3[TOTFREQ]; // For TF_SHIFT <= 12
@@ -683,8 +683,8 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
 
         for (y = 0; y < F; y++) {
 	  ssym [y + C] = j;
-	  sfreq[y + C] = F;
-	  sbase[y + C] = y;
+	  //sfreq[y + C] = F;
+	  //sbase[y + C] = y;
 	  s3[y+C] = (((uint32_t)F)<<(TF_SHIFT+8))|(y<<8)|j;
         }
 	x += F;
@@ -736,12 +736,12 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
     __m512i indices = _mm512_load_epi32(idx); // offsets from cpN[0]
 
     __m512i masked = _mm512_and_epi32(Rz, maskv);
-    __m512i S = _mm512_i32gather_epi32(masked, s3, sizeof(*s3));
+    __m512i S = _mm512_i32gather_epi32(masked, (int *)s3, sizeof(*s3));
     for (i=0; i < out_end; i+=NX) {
       //for (z = 0; z < 16; z++) {  Implict loop, now vectorized 
 
       // For V[z]=sp[idx[z]] below; gather now so AND later isn't delayed
-      __m512i V = _mm512_i32gather_epi32(indices, sp, sizeof(*sp));
+      __m512i V = _mm512_i32gather_epi32(indices, (int *)sp, sizeof(*sp));
 
       //uint16_t f = S>>(TF_SHIFT+8), b = (S>>8) & mask;
       __m512i f = _mm512_srli_epi32(S, TF_SHIFT+8);
@@ -766,7 +766,7 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
       // Start the gather running for next loop iteration.
       //uint32_t S = s3[R[z] & mask];
       masked = _mm512_and_epi32(Rz, maskv);
-      S = _mm512_i32gather_epi32(masked, s3, sizeof(*s3));
+      S = _mm512_i32gather_epi32(masked, (int *)s3, sizeof(*s3));
 
       //idx[z] += R[z] < RANS_BYTE_L ? 1 : 0;
       indices = _mm512_mask_add_epi32(indices, renorm_mask, indices, _mm512_set1_epi32(1));
