@@ -713,18 +713,9 @@ unsigned char *rans_compress_O0_32x16(unsigned char *in, unsigned int in_size,
 #define SET4(a,b) __m256i a##4 = _mm256_set_epi32(b[c[31]], b[c[30]], b[c[29]], b[c[28]], b[c[27]], b[c[26]], b[c[25]], b[c[24]])
 #define SET(a,b) SET1(a,b);SET2(a,b);SET3(a,b);SET4(a,b)
 
-#ifdef FP_DIV
-	SET(FSv,  FS);
-	SET(xmax, SB);
-#else
-	SET(xmax,  SB);
-	SET(rfv,   SA);
-	SET(SDv,   SD);
-	SET(biasv, SC);
-#endif
-
 	// Renorm:
 	// if (x > x_max) {*--ptr16 = x & 0xffff; x >>= 16;}
+	SET(xmax, SB);
 	__m256i cv1 = _mm256_cmpgt_epi32(Rv1, xmax1);
 	__m256i cv2 = _mm256_cmpgt_epi32(Rv2, xmax2);
 	__m256i cv3 = _mm256_cmpgt_epi32(Rv3, xmax3);
@@ -790,10 +781,14 @@ unsigned char *rans_compress_O0_32x16(unsigned char *in, unsigned int in_size,
 	// plus a shift.  KNC has mulhi_epi32, but not sure if this is available.)
 
 #ifndef FP_DIV
+	SET(rfv,   SA);
+
 	rfv1 = _mm256_mulhi_epu32(Rv1, rfv1);
 	rfv2 = _mm256_mulhi_epu32(Rv2, rfv2);
 	rfv3 = _mm256_mulhi_epu32(Rv3, rfv3);
 	rfv4 = _mm256_mulhi_epu32(Rv4, rfv4);
+
+	SET(SDv,   SD);
 
 	__m256i shiftv1 = _mm256_srli_epi32(SDv1, 16);
 	__m256i shiftv2 = _mm256_srli_epi32(SDv2, 16);
@@ -821,6 +816,8 @@ unsigned char *rans_compress_O0_32x16(unsigned char *in, unsigned int in_size,
 	qv3 = _mm256_mullo_epi32(qv3, freqv3);
 	qv4 = _mm256_mullo_epi32(qv4, freqv4);
 
+	SET(biasv, SC);
+
 	qv1 = _mm256_add_epi32(qv1, biasv1);
 	qv2 = _mm256_add_epi32(qv2, biasv2);
 	qv3 = _mm256_add_epi32(qv3, biasv3);
@@ -839,6 +836,8 @@ unsigned char *rans_compress_O0_32x16(unsigned char *in, unsigned int in_size,
 	// R = xdiv << TF_SHIFT;
 	// R += xmod;
 	// R += start;
+
+	SET(FSv,  FS);
 
 	__m256i Fv1 = _mm256_and_si256(FSv1, _mm256_set1_epi32(0xffff));
 	__m256i Fv2 = _mm256_and_si256(FSv2, _mm256_set1_epi32(0xffff));
@@ -1470,13 +1469,13 @@ unsigned char *rans_compress_O1_32x16(unsigned char *in, unsigned int in_size,
         // plus a shift.  KNC has mulhi_epi32, but not sure if this is available.)           
 
 	SETx(rfv,   sN, rcp_freq);
-	SETx(SDv,   sN, SD);
-	SETx(biasv, sN, bias);
 
         rfv1 = _mm256_mulhi_epu32(Rv1, rfv1);
         rfv2 = _mm256_mulhi_epu32(Rv2, rfv2);
         rfv3 = _mm256_mulhi_epu32(Rv3, rfv3);
         rfv4 = _mm256_mulhi_epu32(Rv4, rfv4);
+
+	SETx(SDv,   sN, SD);
 
         __m256i shiftv1 = _mm256_srli_epi32(SDv1, 16);
         __m256i shiftv2 = _mm256_srli_epi32(SDv2, 16);
@@ -1503,6 +1502,8 @@ unsigned char *rans_compress_O1_32x16(unsigned char *in, unsigned int in_size,
         __m256i freqv4 = _mm256_and_si256(SDv4, _mm256_set1_epi32(0xffff));
         qv3 = _mm256_mullo_epi32(qv3, freqv3);
         qv4 = _mm256_mullo_epi32(qv4, freqv4);
+
+	SETx(biasv, sN, bias);
 
         qv1 = _mm256_add_epi32(qv1, biasv1);
 	qv2 = _mm256_add_epi32(qv2, biasv2);
