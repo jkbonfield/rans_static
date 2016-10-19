@@ -703,32 +703,7 @@ unsigned char *rans_compress_O0_32x16(unsigned char *in, unsigned int in_size,
     LOAD(Rv, ransN);
 
     for (i=(in_size &~(NX-1)); i>0; i-=NX) {
-	int32_t c[NX];
-
-	// Load 32x8 bytes (1 AVX reg) and convert to 32x32 (4 AVX reg)
-	// 5% faster to use aligned loads, but can't guarantee.
-#if 1
-	__m128i enc12 = _mm_lddqu_si128((__m128i *)&in[i-32]);
-	__m128i enc34 = _mm_lddqu_si128((__m128i *)&in[i-16]);
-
-	__m256i in1 = _mm256_cvtepu8_epi32(enc12);
-	__m256i in2 = _mm256_cvtepu8_epi32(_mm_bsrli_si128(enc12,8));
-	__m256i in3 = _mm256_cvtepu8_epi32(enc34);
-	__m256i in4 = _mm256_cvtepu8_epi32(_mm_bsrli_si128(enc34,8));
-#else
-	// Usually slower than above 
-	__m256i enc = _mm256_loadu_si256((__m256i *)&in[i-32]);
-	// Move items to their the correct 128-bit lane
-	enc = _mm256_permutevar8x32_epi32(enc, _mm256_set_epi32(7,5,3,1,6,4,2,0));
-	enc = _mm256_shuffle_epi8(enc, _mm256_set_epi8(15,11,7,3, 14,10,6,2, 13,9,5,1, 12,8,4,0,
-						       15,11,7,3, 14,10,6,2, 13,9,5,1, 12,8,4,0));
-	__m256i in1 = _mm256_and_si256(enc, _mm256_set1_epi32(0xff));
-	enc = _mm256_srli_epi32(enc, 8); __m256i in2 = _mm256_and_si256(enc, _mm256_set1_epi32(0xff));
-	enc = _mm256_srli_epi32(enc, 8); __m256i in3 = _mm256_and_si256(enc, _mm256_set1_epi32(0xff));
-	enc = _mm256_srli_epi32(enc, 8); __m256i in4 = enc;
-#endif
-
-	STORE(in,c);
+	uint8_t *c = &in[i-32];
 
 // Set vs gather methods of loading data.
 // Gather is faster, but can only schedule a few to run in parallel.
@@ -738,17 +713,11 @@ unsigned char *rans_compress_O0_32x16(unsigned char *in, unsigned int in_size,
 #define SET4(a,b) __m256i a##4 = _mm256_set_epi32(b[c[31]], b[c[30]], b[c[29]], b[c[28]], b[c[27]], b[c[26]], b[c[25]], b[c[24]])
 #define SET(a,b) SET1(a,b);SET2(a,b);SET3(a,b);SET4(a,b)
 
-#define GAT1(a,b) __m256i a##1 = _mm256_i32gather_epi32((int *)b, in1, 4);
-#define GAT2(a,b) __m256i a##2 = _mm256_i32gather_epi32((int *)b, in2, 4);
-#define GAT3(a,b) __m256i a##3 = _mm256_i32gather_epi32((int *)b, in3, 4);
-#define GAT4(a,b) __m256i a##4 = _mm256_i32gather_epi32((int *)b, in4, 4);
-#define GAT(a,b) GAT1(a,b);GAT2(a,b);GAT3(a,b);GAT4(a,b)
-
 #ifdef FP_DIV
-	GAT(FSv,  FS);
+	SET(FSv,  FS);
 	SET(xmax, SB);
 #else
-	GAT(xmax,  SB);
+	SET(xmax,  SB);
 	SET(rfv,   SA);
 	SET(SDv,   SD);
 	SET(biasv, SC);
