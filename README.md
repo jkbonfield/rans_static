@@ -155,6 +155,7 @@ will work just fine as 8-bit instead, but seems to be slower on my
 system.)
 
 icc-15 Q8 test file, order 0:
+
     arith_static        244.6 MB/s enc, 166.2 MB/s dec	 73124567 bytes -> 16854053 bytes
     rANS_static4x8      300.8 MB/s enc, 657.6 MB/s dec	 73124567 bytes -> 16847496 bytes
     rANS_static4x16     366.4 MB/s enc, 637.4 MB/s dec	 73124567 bytes -> 16847764 bytes
@@ -252,21 +253,21 @@ icc-15 q40 test file, order 1:
 
 gcc-4.8 tests on r32x16b_avx2:
 
-    q8  order 0         450.0 MB/s enc, 1305.2 MB/s dec	 73124567 bytes -> 16853680 bytes
+    q8	order 0		450.0 MB/s enc, 1305.2 MB/s dec	 73124567 bytes -> 16853680 bytes
     q40 order 0		444.0 MB/s enc, 1294.9 MB/s dec	 94602182 bytes -> 53696061 bytes
-    q8  order 1		196.8 MB/s enc, 840.0 MB/s dec	 73124567 bytes -> 15873242 bytes
+    q8	order 1		196.8 MB/s enc, 840.0 MB/s dec	 73124567 bytes -> 15873242 bytes
     q40 order 1		188.2 MB/s enc, 724.0 MB/s dec	 94602182 bytes -> 43392566 bytes
 
 gcc-5.3 tests on r32x16b_avx2:
 
-    q8  order 0         403.0 MB/s enc, 1450.9 MB/s dec	 73124567 bytes -> 16853680 bytes
+    q8	order 0		403.0 MB/s enc, 1450.9 MB/s dec	 73124567 bytes -> 16853680 bytes
     q40 order 0		399.2 MB/s enc, 1439.4 MB/s dec	 94602182 bytes -> 53696061 bytes
-    q8  order 1		200.8 MB/s enc, 879.0 MB/s dec	 73124567 bytes -> 15873242 bytes
+    q8	order 1		200.8 MB/s enc, 879.0 MB/s dec	 73124567 bytes -> 15873242 bytes
     q40 order 1		193.6 MB/s enc, 755.3 MB/s dec	 94602182 bytes -> 43392566 bytes
 
 gcc-6.1 tests on r32x16b_avx2:
 
-    q8  order 0         395.9 MB/s enc, 1432.7 MB/s dec	 73124567 bytes -> 16853680 bytes
+    q8	order 0		395.9 MB/s enc, 1432.7 MB/s dec	 73124567 bytes -> 16853680 bytes
     q40 order 0		392.4 MB/s enc, 1417.6 MB/s dec	 94602182 bytes -> 53696061 bytes
-    q8  order 1		203.8 MB/s enc, 910.4 MB/s dec	 73124567 bytes -> 15873242 bytes
+    q8	order 1		203.8 MB/s enc, 910.4 MB/s dec	 73124567 bytes -> 15873242 bytes
     q40 order 1		196.8 MB/s enc, 783.1 MB/s dec	 94602182 bytes -> 43392566 bytes
