@@ -175,7 +175,7 @@ icc-15 Q8 test file, order 0:
     r32x16_avx2         293.5 MB/s enc, 891.8 MB/s dec	 73124567 bytes -> 16862640 bytes
     r8x16b_avx2         346.2 MB/s enc, 583.4 MB/s dec	 73124567 bytes -> 16848588 bytes
     r16x16b_avx2        347.4 MB/s enc, 972.1 MB/s dec	 73124567 bytes -> 16850260 bytes
-    r32x16b_avx2        362.5 MB/s enc, 1299.8 MB/s dec	 73124567 bytes -> 16853680 bytes
+    r32x16b_avx2        372.8 MB/s enc, 1343.2 MB/s dec	 73124567 bytes -> 16853680 bytes
 
 icc-15 Q40 test file, order 0:
 
@@ -199,7 +199,7 @@ icc-15 Q40 test file, order 0:
     r32x16_avx2         203.6 MB/s enc, 764.9 MB/s dec	 94602182 bytes -> 53707709 bytes
     r8x16b_avx2         236.5 MB/s enc, 582.2 MB/s dec	 94602182 bytes -> 53689513 bytes
     r16x16b_avx2        229.3 MB/s enc, 962.2 MB/s dec	 94602182 bytes -> 53691679 bytes
-    r32x16b_avx2        359.6 MB/s enc, 1297.4 MB/s dec	 94602182 bytes -> 53696061 bytes
+    r32x16b_avx2        369.3 MB/s enc, 1330.4 MB/s dec	 94602182 bytes -> 53696061 bytes
 
 icc-15 Q40 test file, order 1:
 
@@ -223,7 +223,7 @@ icc-15 Q40 test file, order 1:
     r32x16_avx2         not supported
     r8x16b_avx2         not supported
     r16x16b_avx2        not supported
-    r32x16b_avx2        214.8 MB/s enc, 887.1 MB/s dec	 73124567 bytes -> 15873242 bytes
+    r32x16b_avx2        199.4 MB/s enc, 918.1 MB/s dec	 73124567 bytes -> 15873242 bytes
 
 icc-15 q40 test file, order 1:
 
@@ -247,14 +247,26 @@ icc-15 q40 test file, order 1:
     r32x16_avx2         not supported
     r8x16b_avx2         not supported
     r16x16b_avx2        not supported
-    r32x16b_avx2        211.6 MB/s enc, 828.2 MB/s dec	 94602182 bytes -> 43392566 bytes
+    r32x16b_avx2        195.1 MB/s enc, 813.7 MB/s dec	 94602182 bytes -> 43392566 bytes
 
 
 gcc-4.8 tests on r32x16b_avx2:
 
-    q8  order 0         452.9 MB/s enc, 1341.4 MB/s dec	 73124567 bytes -> 16853680 bytes
-    q40 order 0		445.5 MB/s enc, 1332.3 MB/s dec	 94602182 bytes -> 53696061 bytes
-    q8  order 1		191.1 MB/s enc, 822.2 MB/s dec	 73124567 bytes -> 15873242 bytes
-    q40 order 1		188.7 MB/s enc, 772.8 MB/s dec	 94602182 bytes -> 43392566 bytes
+    q8  order 0         450.0 MB/s enc, 1305.2 MB/s dec	 73124567 bytes -> 16853680 bytes
+    q40 order 0		444.0 MB/s enc, 1294.9 MB/s dec	 94602182 bytes -> 53696061 bytes
+    q8  order 1		196.8 MB/s enc, 840.0 MB/s dec	 73124567 bytes -> 15873242 bytes
+    q40 order 1		188.2 MB/s enc, 724.0 MB/s dec	 94602182 bytes -> 43392566 bytes
 
-This is faster than icc for order-0 and slower than order-1.
+gcc-5.3 tests on r32x16b_avx2:
+
+    q8  order 0         403.0 MB/s enc, 1450.9 MB/s dec	 73124567 bytes -> 16853680 bytes
+    q40 order 0		399.2 MB/s enc, 1439.4 MB/s dec	 94602182 bytes -> 53696061 bytes
+    q8  order 1		200.8 MB/s enc, 879.0 MB/s dec	 73124567 bytes -> 15873242 bytes
+    q40 order 1		193.6 MB/s enc, 755.3 MB/s dec	 94602182 bytes -> 43392566 bytes
+
+gcc-6.1 tests on r32x16b_avx2:
+
+    q8  order 0         395.9 MB/s enc, 1432.7 MB/s dec	 73124567 bytes -> 16853680 bytes
+    q40 order 0		392.4 MB/s enc, 1417.6 MB/s dec	 94602182 bytes -> 53696061 bytes
+    q8  order 1		203.8 MB/s enc, 910.4 MB/s dec	 73124567 bytes -> 15873242 bytes
+    q40 order 1		196.8 MB/s enc, 783.1 MB/s dec	 94602182 bytes -> 43392566 bytes

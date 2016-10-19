@@ -547,6 +547,17 @@ __m256i _mm256_div_epi32(__m256i a, __m256i b) {
 }
 #endif
 
+#if 1
+// Simulated gather.  This is sometimes faster as it can run on other ports.
+__m256i _mm256_i32gather_epi32x(int *b, __m256i idx, int size) {
+    int c[8];
+    _mm256_store_si256((__m256i *)c, idx);
+    return _mm256_set_epi32(b[c[7]], b[c[6]], b[c[5]], b[c[4]], b[c[3]], b[c[2]], b[c[1]], b[c[0]]);
+}
+#else
+#define _mm256_i32gather_epi32x _mm256_i32gather_epi32
+#endif
+
 unsigned char *rans_compress_O0_32x16(unsigned char *in, unsigned int in_size,
 				     unsigned char *out, unsigned int *out_size) {
     unsigned char *cp, *out_end;
@@ -994,8 +1005,8 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
 	__m256i masked2 = _mm256_and_si256(Rv2, maskv);
 
 	//  S[z] = s3[m[z]];
-	__m256i Sv1 = _mm256_i32gather_epi32((int *)s3, masked1, sizeof(*s3));
-	__m256i Sv2 = _mm256_i32gather_epi32((int *)s3, masked2, sizeof(*s3));
+	__m256i Sv1 = _mm256_i32gather_epi32x((int *)s3, masked1, sizeof(*s3));
+	__m256i Sv2 = _mm256_i32gather_epi32x((int *)s3, masked2, sizeof(*s3));
 
 	//  f[z] = S[z]>>(TF_SHIFT+8);
 	__m256i fv1 = _mm256_srli_epi32(Sv1, TF_SHIFT+8);
@@ -1058,13 +1069,13 @@ unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
 	//  m[z] = R[z] & mask;
 	//  S[z] = s3[m[z]];
 	__m256i masked3 = _mm256_and_si256(Rv3, maskv);
-	__m256i Sv3 = _mm256_i32gather_epi32((int *)s3, masked3, sizeof(*s3));
+	__m256i Sv3 = _mm256_i32gather_epi32x((int *)s3, masked3, sizeof(*s3));
 
 	*(uint64_t *)&out[i+0] = _mm256_extract_epi64(sv1, 0);
 	*(uint64_t *)&out[i+8] = _mm256_extract_epi64(sv1, 2);
 
 	__m256i masked4 = _mm256_and_si256(Rv4, maskv);
-	__m256i Sv4 = _mm256_i32gather_epi32((int *)s3, masked4, sizeof(*s3));
+	__m256i Sv4 = _mm256_i32gather_epi32x((int *)s3, masked4, sizeof(*s3));
 
 	//  f[z] = S[z]>>(TF_SHIFT+8);
 	__m256i fv3 = _mm256_srli_epi32(Sv3, TF_SHIFT+8);
@@ -1678,14 +1689,14 @@ unsigned char *rans_uncompress_O1_32x16(unsigned char *in, unsigned int in_size,
 	masked4 = _mm256_add_epi32(masked4, Lv4);
 
 	__m256i Sv1 = _mm256_i32gather_epi32((int *)&s3[0][0], masked1, sizeof(s3[0][0]));
-	__m256i Sv2 = _mm256_i32gather_epi32((int *)&s3[0][0], masked2, sizeof(s3[0][0]));
+	__m256i Sv2 = _mm256_i32gather_epi32x((int *)&s3[0][0], masked2, sizeof(s3[0][0]));
 
 	//  f[z] = S[z]>>(TF_SHIFT_O1+8);
 	__m256i fv1 = _mm256_srli_epi32(Sv1, TF_SHIFT_O1+8);
 	__m256i fv2 = _mm256_srli_epi32(Sv2, TF_SHIFT_O1+8);
 
-	__m256i Sv3 = _mm256_i32gather_epi32((int *)&s3[0][0], masked3, sizeof(s3[0][0]));
-	__m256i Sv4 = _mm256_i32gather_epi32((int *)&s3[0][0], masked4, sizeof(s3[0][0]));
+	__m256i Sv3 = _mm256_i32gather_epi32x((int *)&s3[0][0], masked3, sizeof(s3[0][0]));
+	__m256i Sv4 = _mm256_i32gather_epi32x((int *)&s3[0][0], masked4, sizeof(s3[0][0]));
 
 	__m256i fv3 = _mm256_srli_epi32(Sv3, TF_SHIFT_O1+8);
 	__m256i fv4 = _mm256_srli_epi32(Sv4, TF_SHIFT_O1+8);
