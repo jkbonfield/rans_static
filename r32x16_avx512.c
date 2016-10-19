@@ -1,3 +1,5 @@
+#include <x86intrin.h>
+
 /*-------------------------------------------------------------------------- */
 /* rans_byte.h from https://github.com/rygorous/ryg_rans */
 
@@ -5,6 +7,10 @@
 //
 // Not intended to be "industrial strength"; just meant to illustrate the general
 // idea.
+
+#ifndef NX
+#define NX 32
+#endif
 
 #ifndef RANS_BYTE_HEADER
 #define RANS_BYTE_HEADER
@@ -281,16 +287,9 @@ static inline void RansEncPutSymbol(RansState* r, uint8_t** pptr, RansEncSymbol 
     uint32_t x = *r;
     uint32_t x_max = sym->x_max;
 
-//    uint32_t c = x < sym->x_max;
-//    uint16_t *p16 = (uint16_t *)(*pptr-2);
-//    uint32_t p1 = x, x1 = x >> 16;
-//    *p16  = c ? *p16 : p1;
-//    *pptr = c ? *pptr : (uint8_t *)p16;
-//    x     = c ? x : x1;
-
     if (x >= x_max) {
 	uint16_t* ptr = *(uint16_t **)pptr;
-	*--ptr = x;//(uint16_t) (x & 0xffff);
+	*--ptr = (uint16_t) (x & 0xffff);
 	x >>= 16;
 	*pptr = (uint8_t *)ptr;
     }
@@ -342,18 +341,21 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
     // renormalize
     uint32_t x = *r;
 
-#ifndef __x86_64
+#ifndef USE_ASM
+    // Better on Atom?
+    //
     // clang 464, gcc 485
     if (x >= RANS_BYTE_L) return;
     uint16_t* ptr = *(uint16_t **)pptr;
     x = (x << 16) | *ptr++;
     *pptr = (uint8_t *)ptr;
 
-//    // clang 335, gcc 687
+    // clang 335, gcc 687
+//    uint32_t c = x < RANS_BYTE_L;
 //    uint16_t* ptr = *(uint16_t **)pptr;
 //    uint32_t y = (x << 16) | *ptr;
-//    x    = (x < RANS_BYTE_L) ? y : x;
-//    ptr += (x < RANS_BYTE_L) ? 1 : 0;
+//    x    = c ? y : x;
+//    ptr += c;
 //    *pptr = (uint8_t *)ptr;
 
 #else
@@ -398,7 +400,7 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
 #include <assert.h>
 #include <string.h>
 #include <sys/time.h>
-#include "rANS_static4x16.h"
+#include "r16N.h"
 
 #define TF_SHIFT 12
 #define TOTFREQ (1<<TF_SHIFT)
@@ -464,33 +466,35 @@ static void hist8(unsigned char *in, unsigned int in_size, int F0[256]) {
 	F0[i] += F1[i] + F2[i] + F3[i] + F4[i] + F5[i] + F6[i] + F7[i];
 }
 
-unsigned int rans_compress_bound_4x16(unsigned int size, int order) {
-    return order == 0
-	? 1.05*size + 257*3 + 4
-	: 1.05*size + 257*257*3 + 4;
+unsigned int rans_compress_bound_4x16(unsigned int size, int order, int *tab) {
+  int tabsz = order == 0
+    ?     257*3 + 4 + NX*4 + NX*4
+    : 257*257*3 + 4 + NX*4 + NX*4;
+  if (tab) *tab = tabsz;
+  return 1.05*size + tabsz;
 }
 
 unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
 				     unsigned char *out, unsigned int *out_size) {
-    unsigned char *cp, *out_end;
+  unsigned char *cp, *out_endN[NX];
     RansEncSymbol syms[256];
-    RansState rans0;
-    RansState rans2;
-    RansState rans1;
-    RansState rans3;
-    uint8_t* ptr;
+    RansState ransN[NX];
+    uint8_t* ptrN[NX];
     int F[256+MAGIC] = {0}, i, j, tab_size, rle, x, fsum = 0;
     int m = 0, M = 0;
-    int bound = rans_compress_bound_4x16(in_size,0);
+    int tabsz;
+    int bound = rans_compress_bound_4x16(in_size,0,&tabsz), z;
 
     if (!out) {
 	*out_size = bound;
 	out = malloc(*out_size);
     }
-    if (!out || bound > *out_size)
+    if (!out || bound > *out_size) {
 	return NULL;
+    }
 
-    ptr = out_end = out + bound;
+    for (z = 0; z < NX; z++)
+      ptrN[z] = out_endN[z] = out + tabsz + (z+1)*(uint64_t)(bound-tabsz)/NX;
 
     // Compute statistics
     hist8(in, in_size, F);
@@ -534,7 +538,7 @@ unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
     assert(F[M]>0);
 
     // Encode statistics.
-    cp = out+4;
+    cp = out+4 + NX*4;
 
     for (x = rle = j = 0; j < 256; j++) {
 	if (F[j]) {
@@ -568,58 +572,27 @@ unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
     //write(2, out+4, cp-(out+4));
     tab_size = cp-out;
 
-    RansEncInit(&rans0);
-    RansEncInit(&rans1);
-    RansEncInit(&rans2);
-    RansEncInit(&rans3);
+    for (z = 0; z < NX; z++)
+      RansEncInit(&ransN[z]);
 
-    switch (i=(in_size&3)) {
-    case 3: RansEncPutSymbol(&rans2, &ptr, &syms[in[in_size-(i-2)]]);
-    case 2: RansEncPutSymbol(&rans1, &ptr, &syms[in[in_size-(i-1)]]);
-    case 1: RansEncPutSymbol(&rans0, &ptr, &syms[in[in_size-(i-0)]]);
-    case 0:
-	break;
-    }
-    for (i=(in_size &~3); i>0; i-=4) {
-	RansEncSymbol *s3 = &syms[in[i-1]];
-	RansEncSymbol *s2 = &syms[in[i-2]];
-	RansEncSymbol *s1 = &syms[in[i-3]];
-	RansEncSymbol *s0 = &syms[in[i-4]];
+    z = i = in_size&(NX-1);
+    while (z-- > 0)
+      RansEncPutSymbol(&ransN[z], &ptrN[z], &syms[in[in_size-(i-z)]]);
 
-#if 1
-	RansEncPutSymbol(&rans3, &ptr, s3);
-	RansEncPutSymbol(&rans2, &ptr, s2);
-	RansEncPutSymbol(&rans1, &ptr, s1);
-	RansEncPutSymbol(&rans0, &ptr, s0);
-#else
-	// Slightly beter on gcc, much better on clang
-	uint16_t *ptr16 = (uint16_t *)ptr;
-
-	if (rans3 >= s3->x_max) *--ptr16 = (uint16_t)rans3, rans3 >>= 16;
-	if (rans2 >= s2->x_max) *--ptr16 = (uint16_t)rans2, rans2 >>= 16;
-	uint32_t q3 = (uint32_t) (((uint64_t)rans3 * s3->rcp_freq) >> s3->rcp_shift);
-	uint32_t q2 = (uint32_t) (((uint64_t)rans2 * s2->rcp_freq) >> s2->rcp_shift);
-	rans3 += s3->bias + q3 * s3->cmpl_freq;
-	rans2 += s2->bias + q2 * s2->cmpl_freq;
-
-	if (rans1 >= s1->x_max) *--ptr16 = (uint16_t)rans1, rans1 >>= 16;
-	if (rans0 >= s0->x_max) *--ptr16 = (uint16_t)rans0, rans0 >>= 16;
-	uint32_t q1 = (uint32_t) (((uint64_t)rans1 * s1->rcp_freq) >> s1->rcp_shift);
-	uint32_t q0 = (uint32_t) (((uint64_t)rans0 * s0->rcp_freq) >> s0->rcp_shift);
-	rans1 += s1->bias + q1 * s1->cmpl_freq;
-	rans0 += s0->bias + q0 * s0->cmpl_freq;
-
-	ptr = (uint8_t *)ptr16;
-#endif
+    for (i=(in_size &~(NX-1)); i>0; i-=NX) {
+      for (z = 0; z < NX; z++) {
+	RansEncSymbol *s = &syms[in[i-(NX-z)]];
+	RansEncPutSymbol(&ransN[z], &ptrN[z], s);
+      }
     }
 
-    RansEncFlush(&rans3, &ptr);
-    RansEncFlush(&rans2, &ptr);
-    RansEncFlush(&rans1, &ptr);
-    RansEncFlush(&rans0, &ptr);
+    for (z = 0; z < NX; z++)
+      RansEncFlush(&ransN[z], &ptrN[z]);
 
     // Finalise block size and return it
-    *out_size = (out_end - ptr) + tab_size;
+    *out_size = tab_size;
+    for (z = 0; z < NX; z++)
+      *out_size += out_endN[z] - ptrN[z];
 
     cp = out;
     *cp++ = (in_size>> 0) & 0xff;
@@ -627,7 +600,20 @@ unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
     *cp++ = (in_size>>16) & 0xff;
     *cp++ = (in_size>>24) & 0xff;
 
-    memmove(out + tab_size, ptr, out_end-ptr);
+    for (z = 0; z < NX; z++) {
+      // ensure no overflows
+      assert( (z == 0 && ptrN[0] > out+tab_size) || (ptrN[z] > out_endN[z-1]) );
+      *cp++ = ((out_endN[z] - ptrN[z]) >> 0) & 0xff;
+      *cp++ = ((out_endN[z] - ptrN[z]) >> 8) & 0xff;
+      *cp++ = ((out_endN[z] - ptrN[z]) >> 16) & 0xff;
+      *cp++ = ((out_endN[z] - ptrN[z]) >> 24) & 0xff;
+    }
+
+    cp = out + tab_size;
+    for (z = 0; z < NX; z++) {
+      memmove(cp, ptrN[z], out_endN[z]-ptrN[z]);
+      cp += out_endN[z]-ptrN[z];
+    }
 
     return out;
 }
@@ -639,11 +625,13 @@ typedef struct {
 unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
 				       unsigned char *out, unsigned int *out_size) {
     /* Load in the static tables */
-    unsigned char *cp = in + 4;
+    unsigned char *cp = in + 4 + NX*4;
     int i, j, x, y, out_sz, rle;
     uint16_t sfreq[TOTFREQ+32];
     uint16_t sbase[TOTFREQ+32]; // faster to use 32-bit on clang
     uint8_t  ssym [TOTFREQ+64]; // faster to use 16-bit on clang
+
+    uint32_t s3[TOTFREQ]; // For TF_SHIFT <= 12
 
     out_sz = ((in[0])<<0) | ((in[1])<<8) | ((in[2])<<16) | ((in[3])<<24);
     if (!out) {
@@ -665,9 +653,10 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
 	C = x;
 
         for (y = 0; y < F; y++) {
-            ssym [y + C] = j;
-            sfreq[y + C] = F;
-            sbase[y + C] = y;
+	  ssym [y + C] = j;
+	  sfreq[y + C] = F;
+	  sbase[y + C] = y;
+	  s3[y+C] = (((uint32_t)F)<<(TF_SHIFT+8))|(y<<8)|j;
         }
 	x += F;
 
@@ -684,49 +673,202 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
 
     assert(x < TOTFREQ);
 
-    RansState R[4];
-    RansDecInit(&R[0], &cp);
-    RansDecInit(&R[1], &cp);
-    RansDecInit(&R[2], &cp);
-    RansDecInit(&R[3], &cp);
+    int z;
+    unsigned char *cpN[NX];
+    cpN[0] = cp;
+    for (z = 1; z < NX; z++)
+      cpN[z] = cpN[z-1]
+	+ (in[4+(z-1)*4+0]<<0)
+	+ (in[4+(z-1)*4+1]<<8)
+	+ (in[4+(z-1)*4+2]<<16)
+	+ (in[4+(z-1)*4+3]<<24);
 
-    int out_end = (out_sz&~3);
+    RansState R[NX];
+    for (z = 0; z < NX; z++)
+      RansDecInit(&R[z], &cpN[z]);
+
+    int out_end = (out_sz&~(NX-1));
     const uint32_t mask = (1u << TF_SHIFT)-1;
 
-    for (i=0; i < out_end; i+=4) {
-	RansState m[4];
-	m[0] = R[0] & mask;
-        R[0] = sfreq[m[0]] * (R[0] >> TF_SHIFT) + sbase[m[0]];
+    uint16_t *spN[NX];
+    for (z = 0; z < NX; z++)
+      spN[z] = (uint16_t *)cpN[z];
 
-        m[1] = R[1] & mask;
-        R[1] = sfreq[m[1]] * (R[1] >> TF_SHIFT) + sbase[m[1]];
+    uint32_t idx[NX];
+    for (z = 0; z < NX; z++)
+      //idx[z] = 0; // with spN[z][idx[z]] faster on avx512, but not core2-avx
+      idx[z] = spN[z]-spN[0]; // use with spN[0][idx[z]]; faster on core2-avx
+    uint16_t *sp = spN[0];
 
-        m[2] = R[2] & mask;
-        R[2] = sfreq[m[2]] * (R[2] >> TF_SHIFT) + sbase[m[2]];
 
-        m[3] = R[3] & mask;
-        out[i+0] = ssym[m[0]];
-	out[i+1] = ssym[m[1]];
-	out[i+2] = ssym[m[2]];
-	out[i+3] = ssym[m[3]];
-        R[3] = sfreq[m[3]] * (R[3] >> TF_SHIFT) + sbase[m[3]];
+#if NX == 32
+    // 2 interleaved AVX512
+    __m512i maskv = _mm512_set1_epi32(mask); // set mask in all lanes
+    __m512i Rz1 = _mm512_load_epi32(&R[0]);
+    __m512i Rz2 = _mm512_load_epi32(&R[16]);
+    __m512i indices1 = _mm512_load_epi32(&idx[0]); // offsets from cpN[0]
+    __m512i indices2 = _mm512_load_epi32(&idx[16]); // offsets from cpN[0]
 
-	RansDecRenorm(&R[0], &cp);
-	RansDecRenorm(&R[1], &cp);
-	RansDecRenorm(&R[2], &cp);
-	RansDecRenorm(&R[3], &cp);
-    }
+    __m512i masked1 = _mm512_and_epi32(Rz1, maskv);
+    __m512i masked2 = _mm512_and_epi32(Rz2, maskv);
+    __m512i S1 = _mm512_i32gather_epi32(masked1, s3, sizeof(*s3));
+    __m512i S2 = _mm512_i32gather_epi32(masked2, s3, sizeof(*s3));
+    for (i=0; i < out_end; i+=NX) {
+      //for (z = 0; z < 16; z++) {  Implict loop, now vectorized 
 
-    switch(out_sz&3) {
-    case 3:
-        out[out_end + 2] = ssym[R[2] & mask];
-    case 2:
-        out[out_end + 1] = ssym[R[1] & mask];
-    case 1:
-        out[out_end] = ssym[R[0] & mask];
-    default:
-        break;
-    }
+      // For V[z]=sp[idx[z]] below; gather now so AND later isn't delayed
+      __m512i V1 = _mm512_i32gather_epi32(indices1, sp, sizeof(*sp));
+      __m512i V2 = _mm512_i32gather_epi32(indices2, sp, sizeof(*sp));
+
+      //uint16_t f = S>>(TF_SHIFT+8), b = (S>>8) & mask;
+      __m512i f1 = _mm512_srli_epi32(S1, TF_SHIFT+8);
+      __m512i f2 = _mm512_srli_epi32(S2, TF_SHIFT+8);
+      __m512i b1 = _mm512_and_epi32(_mm512_srli_epi32(S1, 8), maskv);
+      __m512i b2 = _mm512_and_epi32(_mm512_srli_epi32(S2, 8), maskv);
+
+      //R[z] = f * (R[z] >> TF_SHIFT) + b;
+      __m512i Rs1 = _mm512_srli_epi32(Rz1, TF_SHIFT);
+      __m512i Rs2 = _mm512_srli_epi32(Rz2, TF_SHIFT);
+      __m512i Rm1 = _mm512_mullo_epi32(Rs1, f1);
+      __m512i Rm2 = _mm512_mullo_epi32(Rs2, f2);
+      Rz1 = _mm512_add_epi32(Rm1, b1);
+      Rz2 = _mm512_add_epi32(Rm2, b2);
+      //Rz1 = _mm512_add_epi32(_mm512_mullo_epi32(_mm512_srli_epi32(Rz1, TF_SHIFT), f1), b1);
+      //Rz2 = _mm512_add_epi32(_mm512_mullo_epi32(_mm512_srli_epi32(Rz2, TF_SHIFT), f2), b2);
+
+
+      // V[z] = sp[idx[z]];
+      V1 = _mm512_and_epi32(V1, _mm512_set1_epi32(0xffff)); // want 16-bit components only.
+      V2 = _mm512_and_epi32(V2, _mm512_set1_epi32(0xffff)); // want 16-bit components only.
+
+      //R[z]    = R[z] < RANS_BYTE_L ? (R[z] << 16) | V[z] : R[z];
+      // aka:  R[z] = R[z] < RANS_BYTE_L ? R[z]<<16  : R[z];
+      //       R[z] = R[z] < RANS_BYTE_L ? R[z]|V[z] : R[z];
+      __mmask16 renorm_mask1 = _mm512_cmplt_epu32_mask(Rz1, _mm512_set1_epi32(RANS_BYTE_L));
+      __mmask16 renorm_mask2 = _mm512_cmplt_epu32_mask(Rz2, _mm512_set1_epi32(RANS_BYTE_L));
+      Rz1 = _mm512_mask_slli_epi32(Rz1, renorm_mask1, Rz1, 16);
+      Rz2 = _mm512_mask_slli_epi32(Rz2, renorm_mask2, Rz2, 16);
+      Rz1 = _mm512_mask_or_epi32(Rz1, renorm_mask1, Rz1, V1);
+      Rz2 = _mm512_mask_or_epi32(Rz2, renorm_mask2, Rz2, V2);
+      
+      //out[i+z] = S;
+      _mm_storeu_si128((__m128i *)(out+i), _mm512_cvtepi32_epi8(S1));
+      // 2nd half lower down
+
+      // Start the gather running for next loop iteration.
+      //uint32_t S = s3[R[z] & mask];
+      masked1 = _mm512_and_epi32(Rz1, maskv);
+      S1 = _mm512_i32gather_epi32(masked1, s3, sizeof(*s3));
+      _mm_storeu_si128((__m128i *)(out+i+16), _mm512_cvtepi32_epi8(S2));
+      masked2 = _mm512_and_epi32(Rz2, maskv);
+      S2 = _mm512_i32gather_epi32(masked2, s3, sizeof(*s3));
+
+      //idx[z] += R[z] < RANS_BYTE_L ? 1 : 0;
+      indices1 = _mm512_mask_add_epi32(indices1, renorm_mask1, indices1, _mm512_set1_epi32(1));
+      indices2 = _mm512_mask_add_epi32(indices2, renorm_mask2, indices2, _mm512_set1_epi32(1));
+    }      
+    _mm512_store_epi32(&R[0],  Rz1);
+    _mm512_store_epi32(&R[16], Rz2);
+#else
+    // 4 interleaved AVX512 for madness!
+    __m512i maskv = _mm512_set1_epi32(mask); // set mask in all lanes
+    __m512i Rz1 = _mm512_load_epi32(&R[0]);
+    __m512i Rz2 = _mm512_load_epi32(&R[16]);
+    __m512i Rz3 = _mm512_load_epi32(&R[32]);
+    __m512i Rz4 = _mm512_load_epi32(&R[48]);
+    __m512i indices1 = _mm512_load_epi32(&idx[0]); // offsets from cpN[0]
+    __m512i indices2 = _mm512_load_epi32(&idx[16]); // offsets from cpN[0]
+    __m512i indices3 = _mm512_load_epi32(&idx[32]); // offsets from cpN[0]
+    __m512i indices4 = _mm512_load_epi32(&idx[48]); // offsets from cpN[0]
+
+    __m512i masked1 = _mm512_and_epi32(Rz1, maskv);
+    __m512i masked2 = _mm512_and_epi32(Rz2, maskv);
+    __m512i masked3 = _mm512_and_epi32(Rz3, maskv);
+    __m512i masked4 = _mm512_and_epi32(Rz4, maskv);
+    __m512i S1 = _mm512_i32gather_epi32(masked1, s3, sizeof(*s3));
+    __m512i S2 = _mm512_i32gather_epi32(masked2, s3, sizeof(*s3));
+    __m512i S3 = _mm512_i32gather_epi32(masked3, s3, sizeof(*s3));
+    __m512i S4 = _mm512_i32gather_epi32(masked4, s3, sizeof(*s3));
+    for (i=0; i < out_end; i+=NX) {
+      // For V[z]=sp[idx[z]] below; gather now so AND later isn't delayed
+      __m512i V1 = _mm512_i32gather_epi32(indices1, sp, sizeof(*sp));
+      __m512i V2 = _mm512_i32gather_epi32(indices2, sp, sizeof(*sp));
+      __m512i V3 = _mm512_i32gather_epi32(indices3, sp, sizeof(*sp));
+      __m512i V4 = _mm512_i32gather_epi32(indices4, sp, sizeof(*sp));
+
+      //uint16_t f = S>>(TF_SHIFT+8), b = (S>>8) & mask;
+      __m512i f1 = _mm512_srli_epi32(S1, TF_SHIFT+8);
+      __m512i f2 = _mm512_srli_epi32(S2, TF_SHIFT+8);
+      __m512i f3 = _mm512_srli_epi32(S3, TF_SHIFT+8);
+      __m512i f4 = _mm512_srli_epi32(S4, TF_SHIFT+8);
+
+      __m512i b1 = _mm512_and_epi32(_mm512_srli_epi32(S1, 8), maskv);
+      __m512i b2 = _mm512_and_epi32(_mm512_srli_epi32(S2, 8), maskv);
+      __m512i b3 = _mm512_and_epi32(_mm512_srli_epi32(S3, 8), maskv);
+      __m512i b4 = _mm512_and_epi32(_mm512_srli_epi32(S4, 8), maskv);
+
+      //R[z] = f * (R[z] >> TF_SHIFT) + b;
+      Rz1 = _mm512_add_epi32(_mm512_mullo_epi32(_mm512_srli_epi32(Rz1, TF_SHIFT), f1), b1);
+      Rz2 = _mm512_add_epi32(_mm512_mullo_epi32(_mm512_srli_epi32(Rz2, TF_SHIFT), f2), b2);
+      Rz3 = _mm512_add_epi32(_mm512_mullo_epi32(_mm512_srli_epi32(Rz3, TF_SHIFT), f3), b3);
+      Rz4 = _mm512_add_epi32(_mm512_mullo_epi32(_mm512_srli_epi32(Rz4, TF_SHIFT), f4), b4);
+
+      // V[z] = sp[idx[z]];
+      V1 = _mm512_and_epi32(V1, _mm512_set1_epi32(0xffff)); // want 16-bit components only.
+      V2 = _mm512_and_epi32(V2, _mm512_set1_epi32(0xffff)); // want 16-bit components only.
+      V3 = _mm512_and_epi32(V3, _mm512_set1_epi32(0xffff)); // want 16-bit components only.
+      V4 = _mm512_and_epi32(V4, _mm512_set1_epi32(0xffff)); // want 16-bit components only.
+
+      //R[z]    = R[z] < RANS_BYTE_L ? (R[z] << 16) | V[z] : R[z];
+      // aka:  R[z] = R[z] < RANS_BYTE_L ? R[z]<<16  : R[z];
+      //       R[z] = R[z] < RANS_BYTE_L ? R[z]|V[z] : R[z];
+      __mmask16 renorm_mask1 = _mm512_cmplt_epu32_mask(Rz1, _mm512_set1_epi32(RANS_BYTE_L));
+      __mmask16 renorm_mask2 = _mm512_cmplt_epu32_mask(Rz2, _mm512_set1_epi32(RANS_BYTE_L));
+      __mmask16 renorm_mask3 = _mm512_cmplt_epu32_mask(Rz3, _mm512_set1_epi32(RANS_BYTE_L));
+      __mmask16 renorm_mask4 = _mm512_cmplt_epu32_mask(Rz4, _mm512_set1_epi32(RANS_BYTE_L));
+
+      Rz1 = _mm512_mask_slli_epi32(Rz1, renorm_mask1, Rz1, 16);
+      Rz2 = _mm512_mask_slli_epi32(Rz2, renorm_mask2, Rz2, 16);
+      Rz3 = _mm512_mask_slli_epi32(Rz3, renorm_mask3, Rz3, 16);
+      Rz4 = _mm512_mask_slli_epi32(Rz4, renorm_mask4, Rz4, 16);
+
+      Rz1 = _mm512_mask_or_epi32(Rz1, renorm_mask1, Rz1, V1);
+      Rz2 = _mm512_mask_or_epi32(Rz2, renorm_mask2, Rz2, V2);
+      Rz3 = _mm512_mask_or_epi32(Rz3, renorm_mask3, Rz3, V3);
+      Rz4 = _mm512_mask_or_epi32(Rz4, renorm_mask4, Rz4, V4);
+      
+      // Start the gather running for next loop iteration.
+      //uint32_t S = s3[R[z] & mask];
+      masked1 = _mm512_and_epi32(Rz1, maskv);
+      masked2 = _mm512_and_epi32(Rz2, maskv);
+      masked3 = _mm512_and_epi32(Rz3, maskv);
+      masked4 = _mm512_and_epi32(Rz4, maskv);
+
+      //out[i+z] = S;
+      _mm_storeu_si128((__m128i *)(out+i   ), _mm512_cvtepi32_epi8(S1));
+      _mm_storeu_si128((__m128i *)(out+i+16), _mm512_cvtepi32_epi8(S2));
+      _mm_storeu_si128((__m128i *)(out+i+32), _mm512_cvtepi32_epi8(S3));
+      _mm_storeu_si128((__m128i *)(out+i+48), _mm512_cvtepi32_epi8(S4));
+
+      S1 = _mm512_i32gather_epi32(masked1, s3, sizeof(*s3));
+      S2 = _mm512_i32gather_epi32(masked2, s3, sizeof(*s3));
+      S3 = _mm512_i32gather_epi32(masked3, s3, sizeof(*s3));
+      S4 = _mm512_i32gather_epi32(masked4, s3, sizeof(*s3));
+
+      //idx[z] += R[z] < RANS_BYTE_L ? 1 : 0;
+      indices1 = _mm512_mask_add_epi32(indices1, renorm_mask1, indices1, _mm512_set1_epi32(1));
+      indices2 = _mm512_mask_add_epi32(indices2, renorm_mask2, indices2, _mm512_set1_epi32(1));
+      indices3 = _mm512_mask_add_epi32(indices3, renorm_mask3, indices3, _mm512_set1_epi32(1));
+      indices4 = _mm512_mask_add_epi32(indices4, renorm_mask4, indices4, _mm512_set1_epi32(1));
+    }      
+    _mm512_store_epi32(&R[0],  Rz1);
+    _mm512_store_epi32(&R[16], Rz2);
+    _mm512_store_epi32(&R[32], Rz3);
+    _mm512_store_epi32(&R[48], Rz4);
+#endif
+
+    for (z = out_sz & (NX-1); z-- > 0; )
+      out[out_end + z] = ssym[R[z] & mask];
 
     *out_size = out_sz;
     return out;
@@ -797,7 +939,7 @@ unsigned char *rans_compress_O1_4x16(unsigned char *in, unsigned int in_size,
     unsigned char *cp, *out_end;
     unsigned int tab_size, rle_i, rle_j;
     RansEncSymbol syms[256][256];
-    int bound = rans_compress_bound_4x16(in_size,1);
+    int bound = rans_compress_bound_4x16(in_size,1, NULL);
 
     if (!out) {
 	*out_size = bound;
@@ -1263,7 +1405,10 @@ unsigned char *rans_uncompress_O1sfb_4x16(unsigned char *in, unsigned int in_siz
     RansDecInit(&rans3, &ptr);
 
     int isz4 = out_sz>>2;
-    int l0 = 0, l1 = 0, l2 = 0, l3 = 0;
+    int l0 = 0;
+    int l1 = 0;
+    int l2 = 0;
+    int l3 = 0;
     int i4[] = {0*isz4, 1*isz4, 2*isz4, 3*isz4};
 
     RansState R[4];
@@ -1272,31 +1417,29 @@ unsigned char *rans_uncompress_O1sfb_4x16(unsigned char *in, unsigned int in_siz
     R[2] = rans2;
     R[3] = rans3;
 
-    const uint32_t mask = ((1u << TF_SHIFT_O1)-1);
     for (; i4[0] < isz4; i4[0]++, i4[1]++, i4[2]++, i4[3]++) {
 	uint32_t m[4];
 	uint32_t c[4];
 
-	m[0] = R[0] & mask;
-	R[0] = sfb[l0][m[0]].f * (R[0]>>TF_SHIFT_O1) + sfb[l0][m[0]].b;
+	m[0] = R[0] & ((1u << TF_SHIFT_O1)-1);
 	c[0] = ssym[l0][m[0]];
+	R[0] = sfb[l0][m[0]].f * (R[0]>>TF_SHIFT_O1) + sfb[l0][m[0]].b;
 
-	m[1] = R[1] & mask;
-	R[1] = sfb[l1][m[1]].f * (R[1]>>TF_SHIFT_O1) + sfb[l1][m[1]].b;
+	m[1] = R[1] & ((1u << TF_SHIFT_O1)-1);
 	c[1] = ssym[l1][m[1]];
+	R[1] = sfb[l1][m[1]].f * (R[1]>>TF_SHIFT_O1) + sfb[l1][m[1]].b;
 
-	m[2] = R[2] & mask;
-	R[2] = sfb[l2][m[2]].f * (R[2]>>TF_SHIFT_O1) + sfb[l2][m[2]].b;
+	m[2] = R[2] & ((1u << TF_SHIFT_O1)-1);
 	c[2] = ssym[l2][m[2]];
+	R[2] = sfb[l2][m[2]].f * (R[2]>>TF_SHIFT_O1) + sfb[l2][m[2]].b;
 
-	m[3] = R[3] & mask;
-	R[3] = sfb[l3][m[3]].f * (R[3]>>TF_SHIFT_O1) + sfb[l3][m[3]].b;
+	m[3] = R[3] & ((1u << TF_SHIFT_O1)-1);
 	c[3] = ssym[l3][m[3]];
-
 	out[i4[0]] = c[0];
 	out[i4[1]] = c[1];
 	out[i4[2]] = c[2];
 	out[i4[3]] = c[3];
+	R[3] = sfb[l3][m[3]].f * (R[3]>>TF_SHIFT_O1) + sfb[l3][m[3]].b;
 
 	RansDecRenorm(&R[0], &ptr);
 	RansDecRenorm(&R[1], &ptr);
@@ -1348,7 +1491,7 @@ unsigned char *rans_uncompress_to_4x16(unsigned char *in,  unsigned int in_size,
 				       int order) {
     return order
 	? rans_uncompress_O1sfb_4x16(in, in_size, out, out_size)
-	//? rans_uncompress_O1c_4x16(in, in_size, out, out_size)
+      //? rans_uncompress_O1c_4x16(in, in_size, out, out_size)
 	: rans_uncompress_O0_4x16(in, in_size, out, out_size);
 }
 
@@ -1434,7 +1577,7 @@ int main(int argc, char **argv) {
 	    b[nb].blk = malloc(len);
 	    b[nb].sz = len;
 	    memcpy(b[nb].blk, in_buf, len);
-	    bc[nb].sz = rans_compress_bound_4x16(BLK_SIZE, order);
+	    bc[nb].sz = rans_compress_bound_4x16(BLK_SIZE, order, NULL);
 	    bc[nb].blk = malloc(bc[nb].sz);
 	    bu[nb].sz = BLK_SIZE;
 	    bu[nb].blk = malloc(BLK_SIZE);
@@ -1470,8 +1613,13 @@ int main(int argc, char **argv) {
 	    gettimeofday(&tv4, NULL);
 
 	    for (i = 0; i < nb; i++) {
-		if (b[i].sz != bu[i].sz || memcmp(b[i].blk, bu[i].blk, b[i].sz))
-		    fprintf(stderr, "Mismatch in block %d, sz %d/%d\n", i, b[i].sz, bu[i].sz);
+	      if (b[i].sz != bu[i].sz || memcmp(b[i].blk, bu[i].blk, b[i].sz)) {
+		int z;
+		for (z = 0; z < b[i].sz; z++)
+		  if (b[i].blk[z] != bu[i].blk[z])
+		    break;
+		fprintf(stderr, "Mismatch in block %d, sz %d/%d, at %d\n", i, b[i].sz, bu[i].sz, z);
+	      }
 		//free(bc[i].blk);
 		//free(bu[i].blk);
 	    }

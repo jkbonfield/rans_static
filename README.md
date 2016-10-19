@@ -53,6 +53,46 @@ tweaks and ideas.
 	Available on most(all?) x86_64 architectures, but I needed to
 	consider 32-bit hosts too.)
 
+There are also some more experimental codecs for investigating use of
+SIMD (in a rather poor state code-wise at present with lots of
+warnings and commented out bits of code).  On some of these the
+order-1 coder is non functioning or not yet updated.
+
+- rNx16.c
+	A generic N-way interleaving with N states and N decode/encode
+	buffers.  This is an attempt to permit automatic vectorisation
+	within compilers by removing dependency between the loop over
+	N states, but it suffers from a large amount of memory
+	gathers.  Compile with eg -DNX=32 to change N.
+	NB: at present only icc seems able to vectorise the decoder.
+
+- rNx16b.c
+	A generic N-way interleaving with N states and one shared
+	decode/encode buffer.  This has better memory utilisation than
+	rNx16.c, but the shared buffer makes automatic vectorisation
+	challenging.
+	With -DNX=4 this is binary compatible with rANS_static4x16.c
+	output. but around 10-20% slower to due no manual reordering
+	of the statements.
+
+- r8x16_sse.c
+- r8x16_avx2.c
+- r16x16_avx2.c
+- r16x16_avx512.c
+- r32x16_avx2.c
+- r32x16_avx512.c
+	Various custom versions of rNx16.c using SSE, AVX2 or AVX512
+	instructions for N 8, 16 and 32.
+
+- r8x16b_avx2.c
+- r16x16b_avx2.c
+- r16x16b_avx512.c
+- r32x16b_avx2.c
+- r32x16b_avx512.c
+	Various custom versions of rNx16b.c using SSE, AVX2 or AVX512
+	instructions for N 8, 16 and 32.
+	These are typically faster than the rNx16.c variants.
+
 
 PS.
 See http://encode.ru/threads/1867-Unrolling-arithmetic-coding
@@ -106,17 +146,7 @@ distinct values each, representing high and low complexity data.
 
 
 Tested on an "Intel(R) Core(TM) i5-4570 CPU @ 3.20GHz" (from
-/proc/cpuinfo on Ubuntu Trusty).
-
-rANS_static4x8 and rANS_static4x16 refer to the source/algorithm
-files, tested by rANS_static -8 and rANS_static -16 executables
-respectively.
-
-rANS_static4x16-10 vs rANS_static4x16-9 is a change from 10 to 9 for
-the TF_SHIFT_O1 parameter. (The O0 parameter is kept at 12.)
-This reduces table lookup size and has a substantial speed improvement
-to the decompression times, but at a cost of poorer accuracy in coding
-leading to larger files.
+/proc/cpuinfo on Ubuntu Trusty) using Intel icc-15 compiler.
 
 Also if cache memory is tight on your CPU, consider switching to the
 rans_uncompress_O1c_4x16() function instead of rans_uncompress_O1_sfb_4x16()
@@ -124,42 +154,107 @@ or changing ssym[] array to be uint8_t instead of uint16_t in sfb.  (This
 will work just fine as 8-bit instead, but seems to be slower on my
 system.)
 
-"x" marks deprecated code.
+icc-15 Q8 test file, order 0:
+    arith_static        244.6 MB/s enc, 166.2 MB/s dec	 73124567 bytes -> 16854053 bytes
+    rANS_static4x8      300.8 MB/s enc, 657.6 MB/s dec	 73124567 bytes -> 16847496 bytes
+    rANS_static4x16     366.4 MB/s enc, 637.4 MB/s dec	 73124567 bytes -> 16847764 bytes
+    rANS_static4c       294.6 MB/s enc, 317.7 MB/s dec	 73124567 bytes -> 16847633 bytes
+    rANS_static4j       298.8 MB/s enc, 347.5 MB/s dec	 73124567 bytes -> 16847597 bytes
+    rANS_static64c      417.2 MB/s enc, 517.1 MB/s dec	 73124567 bytes -> 16848348 bytes
+    r4x16               336.4 MB/s enc, 370.7 MB/s dec	 73124567 bytes -> 16848884 bytes
+    r8x16               339.7 MB/s enc, 540.6 MB/s dec	 73124567 bytes -> 16850828 bytes
+    r16x16              340.3 MB/s enc, 648.3 MB/s dec	 73124567 bytes -> 16854740 bytes
+    r32x16              298.3 MB/s enc, 636.7 MB/s dec	 73124567 bytes -> 16862640 bytes
+    r4x16b              336.6 MB/s enc, 432.2 MB/s dec	 73124567 bytes -> 16847764 bytes
+    r8x16b              339.7 MB/s enc, 433.7 MB/s dec	 73124567 bytes -> 16848588 bytes
+    r16x16b             342.0 MB/s enc, 433.8 MB/s dec	 73124567 bytes -> 16850260 bytes
+    r32x16b             301.8 MB/s enc, 410.9 MB/s dec	 73124567 bytes -> 16853680 bytes
+    r8x16_sse           332.6 MB/s enc, 563.8 MB/s dec	 73124567 bytes -> 16850828 bytes
+    r8x16_avx2          341.1 MB/s enc, 582.9 MB/s dec	 73124567 bytes -> 16850828 bytes
+    r16x16_avx2         339.8 MB/s enc, 971.1 MB/s dec	 73124567 bytes -> 16854740 bytes
+    r32x16_avx2         293.5 MB/s enc, 891.8 MB/s dec	 73124567 bytes -> 16862640 bytes
+    r8x16b_avx2         346.2 MB/s enc, 583.4 MB/s dec	 73124567 bytes -> 16848588 bytes
+    r16x16b_avx2        347.4 MB/s enc, 972.1 MB/s dec	 73124567 bytes -> 16850260 bytes
+    r32x16b_avx2        362.5 MB/s enc, 1299.8 MB/s dec	 73124567 bytes -> 16853680 bytes
 
-Q40 test file, order 0:
+icc-15 Q40 test file, order 0:
 
-    arith_static            251.2 MB/s enc, 143.0 MB/s dec  94602182 bytes -> 53711390 bytes
-    rANS_static4x8          292.6 MB/s enc, 656.3 MB/s dec  94602182 bytes -> 53690159 bytes
-    rANS_static4x16         292.7 MB/s enc, 662.6 MB/s dec  94602182 bytes -> 53690572 bytes
-  x rANS_static4c           289.2 MB/s enc, 340.0 MB/s dec  94602182 bytes -> 53690171 bytes
-  x rANS_static4j           293.7 MB/s enc, 376.1 MB/s dec  94602182 bytes -> 53690159 bytes
-    rANS_static64c          279.0 MB/s enc, 439.4 MB/s dec  94602182 bytes -> 53691108 bytes
-   
-Q8 test file, order 0:
+    arith_static        265.9 MB/s enc, 168.5 MB/s dec	 94602182 bytes -> 53711390 bytes
+    rANS_static4x8      318.3 MB/s enc, 650.0 MB/s dec	 94602182 bytes -> 53687617 bytes
+    rANS_static4x16     297.6 MB/s enc, 630.7 MB/s dec	 94602182 bytes -> 53688461 bytes
+    rANS_static4c       295.2 MB/s enc, 336.8 MB/s dec	 94602182 bytes -> 53690171 bytes
+    rANS_static4j       301.3 MB/s enc, 357.6 MB/s dec	 94602182 bytes -> 53690159 bytes
+    rANS_static64c      318.6 MB/s enc, 410.1 MB/s dec	 94602182 bytes -> 53691108 bytes
+    r4x16               277.6 MB/s enc, 371.0 MB/s dec	 94602182 bytes -> 53689917 bytes
+    r8x16               232.6 MB/s enc, 541.0 MB/s dec	 94602182 bytes -> 53692425 bytes
+    r16x16              226.2 MB/s enc, 638.3 MB/s dec	 94602182 bytes -> 53697503 bytes
+    r32x16              207.7 MB/s enc, 598.2 MB/s dec	 94602182 bytes -> 53707709 bytes
+    r4x16b              271.4 MB/s enc, 429.8 MB/s dec	 94602182 bytes -> 53688461 bytes
+    r8x16b              230.8 MB/s enc, 432.1 MB/s dec	 94602182 bytes -> 53689513 bytes
+    r16x16b             228.2 MB/s enc, 432.7 MB/s dec	 94602182 bytes -> 53691679 bytes
+    r32x16b             210.6 MB/s enc, 411.1 MB/s dec	 94602182 bytes -> 53696061 bytes
+    r8x16_sse           234.1 MB/s enc, 566.7 MB/s dec	 94602182 bytes -> 53692425 bytes
+    r8x16_avx2          230.0 MB/s enc, 576.2 MB/s dec	 94602182 bytes -> 53692425 bytes
+    r16x16_avx2         224.8 MB/s enc, 961.0 MB/s dec	 94602182 bytes -> 53697503 bytes
+    r32x16_avx2         203.6 MB/s enc, 764.9 MB/s dec	 94602182 bytes -> 53707709 bytes
+    r8x16b_avx2         236.5 MB/s enc, 582.2 MB/s dec	 94602182 bytes -> 53689513 bytes
+    r16x16b_avx2        229.3 MB/s enc, 962.2 MB/s dec	 94602182 bytes -> 53691679 bytes
+    r32x16b_avx2        359.6 MB/s enc, 1297.4 MB/s dec	 94602182 bytes -> 53696061 bytes
 
-    arith_static            239.1 MB/s enc, 145.4 MB/s dec  73124567 bytes -> 16854053 bytes
-    rANS_static4x8          287.5 MB/s enc, 666.2 MB/s dec  73124567 bytes -> 16847597 bytes
-    rANS_static4x16         355.9 MB/s enc, 670.1 MB/s dec  73124567 bytes -> 16847762 bytes
-  x rANS_static4c           291.7 MB/s enc, 349.5 MB/s dec  73124567 bytes -> 16847633 bytes
-  x rANS_static4j           290.5 MB/s enc, 354.2 MB/s dec  73124567 bytes -> 16847597 bytes
-    rANS_static64c          351.0 MB/s enc, 549.4 MB/s dec  73124567 bytes -> 16848348 bytes
-    
-Q40 test file, order 1:
+icc-15 Q40 test file, order 1:
 
-    arith_static            128.4 MB/s enc,  94.7 MB/s dec  94602182 bytes -> 43420823 bytes
-    rANS_static4x8          175.3 MB/s enc, 353.5 MB/s dec  94602182 bytes -> 43167683 bytes
-    rANS_static4x16-10      199.8 MB/s enc, 401.9 MB/s dec  94602182 bytes -> 43229151 bytes
-    rANS_static4x16-9       200.1 MB/s enc, 460.2 MB/s dec  94602182 bytes -> 43415360 bytes
-  x rANS_static4c           168.4 MB/s enc, 212.1 MB/s dec  94602182 bytes -> 43167683 bytes
-  x rANS_static4j           170.0 MB/s enc, 240.2 MB/s dec  94602182 bytes -> 43167683 bytes
-    rANS_static64c          203.9 MB/s enc, 287.1 MB/s dec  94602182 bytes -> 43168614 bytes
-    
-Q8 test file, order 1:
+    arith_static        186.2 MB/s enc, 132.7 MB/s dec	 73124567 bytes -> 15860154 bytes
+    rANS_static4x8      189.6 MB/s enc, 363.2 MB/s dec	 73124567 bytes -> 15849814 bytes
+    rANS_static4x16     221.8 MB/s enc, 406.1 MB/s dec	 73124567 bytes -> 15866984 bytes
+    rANS_static4c       183.3 MB/s enc, 267.4 MB/s dec	 73124567 bytes -> 15849814 bytes
+    rANS_static4j       192.3 MB/s enc, 298.1 MB/s dec	 73124567 bytes -> 15849814 bytes
+    rANS_static64c      230.3 MB/s enc, 385.0 MB/s dec	 73124567 bytes -> 15850522 bytes
+    r4x16               not supported
+    r8x16               not supported
+    r16x16              not supported
+    r32x16              not supported
+    r4x16b              233.9 MB/s enc, 286.2 MB/s dec	 73124567 bytes -> 15866984 bytes
+    r8x16b              164.6 MB/s enc, 288.9 MB/s dec	 73124567 bytes -> 15867863 bytes
+    r16x16b             147.5 MB/s enc, 291.5 MB/s dec	 73124567 bytes -> 15869665 bytes
+    r32x16b             125.0 MB/s enc, 285.4 MB/s dec	 73124567 bytes -> 15873242 bytes
+    r8x16_sse           not supported
+    r8x16_avx2          not supported
+    r16x16_avx2         not supported
+    r32x16_avx2         not supported
+    r8x16b_avx2         not supported
+    r16x16b_avx2        not supported
+    r32x16b_avx2        214.8 MB/s enc, 887.1 MB/s dec	 73124567 bytes -> 15873242 bytes
 
-    arith_static            189.2 MB/s enc, 130.4 MB/s dec  73124567 bytes -> 15860154 bytes
-    rANS_static4k-asm       212.3 MB/s enc, 425.3 MB/s dec  73124567 bytes -> 15849814 bytes
-    rANS_static4x16-10      246.1 MB/s enc, 504.7 MB/s dec  73124567 bytes -> 15869015 bytes
-    rANS_static4x16-9       247.5 MB/s enc, 508.2 MB/s dec  73124567 bytes -> 15892582 bytes
-  x rANS_static4c           208.6 MB/s enc, 269.2 MB/s dec  73124567 bytes -> 15849814 bytes
-  x rANS_static4j           210.5 MB/s enc, 305.1 MB/s dec  73124567 bytes -> 15849814 bytes
-    rANS_static64c          239.2 MB/s enc, 397.6 MB/s dec  73124567 bytes -> 15850522 bytes
+icc-15 q40 test file, order 1:
+
+    arith_static        130.0 mb/s enc, 101.0 mb/s dec	 94602182 bytes -> 43420823 bytes
+    rans_static4x8      147.9 mb/s enc, 324.0 mb/s dec	 94602182 bytes -> 43167683 bytes
+    rans_static4x16     171.1 mb/s enc, 396.9 mb/s dec	 94602182 bytes -> 43383241 bytes
+    rans_static4c       144.9 mb/s enc, 203.9 mb/s dec	 94602182 bytes -> 43167683 bytes
+    rans_static4j       150.2 mb/s enc, 239.0 mb/s dec	 94602182 bytes -> 43167683 bytes
+    rans_static64c      192.5 mb/s enc, 292.0 mb/s dec	 94602182 bytes -> 43168614 bytes
+    r4x16               not supported
+    r8x16               not supported
+    r16x16              not supported
+    r32x16              not supported
+    r4x16b              181.6 mb/s enc, 259.5 mb/s dec	 94602182 bytes -> 43383241 bytes
+    r8x16b              130.8 mb/s enc, 261.6 mb/s dec	 94602182 bytes -> 43384646 bytes
+    r16x16b             120.4 mb/s enc, 262.8 mb/s dec	 94602182 bytes -> 43387506 bytes
+    r32x16b             107.3 mb/s enc, 261.6 mb/s dec	 94602182 bytes -> 43392566 bytes
+    r8x16_sse           not supported
+    r8x16_avx2          not supported
+    r16x16_avx2         not supported
+    r32x16_avx2         not supported
+    r8x16b_avx2         not supported
+    r16x16b_avx2        not supported
+    r32x16b_avx2        211.6 MB/s enc, 828.2 MB/s dec	 94602182 bytes -> 43392566 bytes
+
+
+gcc-4.8 tests on r32x16b_avx2:
+
+    q8  order 0         452.9 MB/s enc, 1341.4 MB/s dec	 73124567 bytes -> 16853680 bytes
+    q40 order 0		445.5 MB/s enc, 1332.3 MB/s dec	 94602182 bytes -> 53696061 bytes
+    q8  order 1		191.1 MB/s enc, 822.2 MB/s dec	 73124567 bytes -> 15873242 bytes
+    q40 order 1		188.7 MB/s enc, 772.8 MB/s dec	 94602182 bytes -> 43392566 bytes
+
+This is faster than icc for order-0 and slower than order-1.
