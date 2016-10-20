@@ -412,11 +412,15 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
 #include "r16N.h"
 #include "permute.h"
 
-#define TF_SHIFT 12
+#ifndef TF_SHIFT
+#  define TF_SHIFT 12
+#endif
 #define TOTFREQ (1<<TF_SHIFT)
 
-// 9 is considerably faster due to reduced table size.
-#define TF_SHIFT_O1 9
+// 9 is considerably faster on some data sets due to reduced table size.
+#ifndef TF_SHIFT_O1
+#  define TF_SHIFT_O1 10
+#endif
 #define TOTFREQ_O1 (1<<TF_SHIFT_O1)
 
 
@@ -1391,12 +1395,6 @@ unsigned char *rans_compress_O1_32x16(unsigned char *in, unsigned int in_size,
 	//	}
 	//LOAD(xmax,x_max);
 	SETx(xmax, sN, x_max);
-
-        xmax1 = _mm256_sub_epi32(xmax1, _mm256_set1_epi32(1));
-        xmax2 = _mm256_sub_epi32(xmax2, _mm256_set1_epi32(1));
-        xmax3 = _mm256_sub_epi32(xmax3, _mm256_set1_epi32(1));
-        xmax4 = _mm256_sub_epi32(xmax4, _mm256_set1_epi32(1));
-
         __m256i cv1 = _mm256_cmpgt_epi32(Rv1, xmax1);
         __m256i cv2 = _mm256_cmpgt_epi32(Rv2, xmax2);
         __m256i cv3 = _mm256_cmpgt_epi32(Rv3, xmax3);
@@ -1885,6 +1883,7 @@ unsigned char *rans_uncompress_32x16(unsigned char *in, unsigned int in_size,
 
 #ifdef TEST_MAIN
 
+// NB: Best at a non-power of 2 for order-1 coding, eg 507*1121 or 1013*1041
 #ifndef BLK_SIZE
 #  define BLK_SIZE 1024*1024
 #endif

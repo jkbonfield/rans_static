@@ -6,6 +6,9 @@ PROGS_EXPERIMENTAL=r4x16 r8x16 r16x16 r32x16 r4x16b r8x16b r16x16b r32x16b $(PRO
 CFLAGS=-O3 -g -mtune=native -Wall
 OMP=-fopenmp
 
+BLK_SIZE = -DBLK_SIZE=1013*1047
+CFLAGS += $(BLK_SIZE)
+
 PROGS_OLD=rANS_static4c rANS_static4j rANS_static64c
 PROGS=arith_static rANS_static rANS_static4x8 rANS_static4x16 $(PROGS_OLD) $(PROGS_KNL) $(PROGS_EXPERIMENTAL)
 all: $(PROGS)
