@@ -49,7 +49,9 @@
 #include <sys/time.h>
 
 #define ABS(a) ((a)>0?(a):-(a))
-#define BLK_SIZE 1000000
+#ifndef BLK_SIZE
+#  define BLK_SIZE 1024*1024
+#endif
 
 // Room to allow for expanded BLK_SIZE on worst case compression.
 #define BLK_SIZE2 ((int)(1.05*BLK_SIZE+10))
