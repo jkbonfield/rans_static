@@ -65,6 +65,26 @@ int main(void) {
 }
 #endif
 
+/*
+ * These tables are 8k.  On older systems with small L1 cache, this may be
+ * a problem.
+ *
+ * #define PM(a,b,c,d,e,f,g,h) ((a<<0)|(b<<4)|(c<<8)|(d<<12)|(e<<16)|(f<<20)|(g<<24)|(h<<28))
+ *
+ * Instead of permute via
+ *    __m256i idx1 = _mm256_load_si256((const __m256i*)permute[imask1]);
+ *
+ * we can pack the indices and shift them back again
+ *   __m256i idx1 = _mm256_srlv_epi32(_mm256_set1_epi32(permute2[imask1]),
+ *                                    _mm256_set_epi32(28,24,20,16,12,8,4,0));
+ *
+ * However on my Haswell system this slows down r32x16b_avx2 from 1440 to
+ * 1200 MB/s decode speeds.
+ * It's much closer for order-1 decoder, but still doesn't help.
+ *
+ * The encoder side seems to make no difference either way or be very marginal.
+ */
+
 #define _ 9
 static uint32_t permute[256][8] = { // reverse binary bit order
   { _,_,_,_,_,_,_,_,},
