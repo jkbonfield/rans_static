@@ -1632,7 +1632,10 @@ unsigned char *rans_uncompress_O1_32x16(unsigned char *in, unsigned int in_size,
     LOAD(Rv, ransN);
     LOAD(Lv, lN);
 
-    unsigned char tbuf[32][32];
+    union {
+	unsigned char tbuf[32][32];
+	uint64_t tbuf64[32][4];
+    } u;
     int tidx = 0;
 
     for (; iN[0] < isz4; ) {
@@ -1715,8 +1718,8 @@ unsigned char *rans_uncompress_O1_32x16(unsigned char *in, unsigned int in_size,
 	Vv1 = _mm256_permutevar8x32_epi32(Vv1, idx1);
 	sp += _mm_popcnt_u32(imask1);
 
-	*(uint64_t *)(&tbuf[tidx][0]) = _mm256_extract_epi64(sv1, 0);
-	*(uint64_t *)(&tbuf[tidx][8]) = _mm256_extract_epi64(sv1, 2);
+	u.tbuf64[tidx][0] = _mm256_extract_epi64(sv1, 0);
+	u.tbuf64[tidx][1] = _mm256_extract_epi64(sv1, 2);
 
 	__m256i idx2 = _mm256_load_si256((const __m256i*)permute[imask2]);
 	__m256i Vv2 = _mm256_cvtepu16_epi32(_mm_loadu_si128((__m128i *)sp));
@@ -1764,8 +1767,8 @@ unsigned char *rans_uncompress_O1_32x16(unsigned char *in, unsigned int in_size,
 	sv3 = _mm256_permute4x64_epi64(sv3, 0xd8);
 	sv3 = _mm256_packus_epi16(sv3, sv3);
 
-	*(uint64_t *)(&tbuf[tidx][16]) = _mm256_extract_epi64(sv3, 0);
-	*(uint64_t *)(&tbuf[tidx][24]) = _mm256_extract_epi64(sv3, 2);
+	u.tbuf64[tidx][2] = _mm256_extract_epi64(sv3, 0);
+	u.tbuf64[tidx][3] = _mm256_extract_epi64(sv3, 2);
 
 	iN[0]++;
 	if (++tidx == 32) {
@@ -1774,25 +1777,25 @@ unsigned char *rans_uncompress_O1_32x16(unsigned char *in, unsigned int in_size,
 	    for (z = 0; z < NX; z++) {
 		// replace by gathers?
 		*(uint64_t *)&out[iN[z]] =
-		    ((uint64_t)(tbuf[0][z])<< 0) + ((uint64_t)(tbuf[1][z])<< 8) +
-		    ((uint64_t)(tbuf[2][z])<<16) + ((uint64_t)(tbuf[3][z])<<24) +
-		    ((uint64_t)(tbuf[4][z])<<32) + ((uint64_t)(tbuf[5][z])<<40) +
-		    ((uint64_t)(tbuf[6][z])<<48) + ((uint64_t)(tbuf[7][z])<<56);
+		    ((uint64_t)(u.tbuf[0][z])<< 0) + ((uint64_t)(u.tbuf[1][z])<< 8) +
+		    ((uint64_t)(u.tbuf[2][z])<<16) + ((uint64_t)(u.tbuf[3][z])<<24) +
+		    ((uint64_t)(u.tbuf[4][z])<<32) + ((uint64_t)(u.tbuf[5][z])<<40) +
+		    ((uint64_t)(u.tbuf[6][z])<<48) + ((uint64_t)(u.tbuf[7][z])<<56);
 		*(uint64_t *)&out[iN[z]+8] =
-		    ((uint64_t)(tbuf[8+0][z])<< 0) + ((uint64_t)(tbuf[8+1][z])<< 8) +
-		    ((uint64_t)(tbuf[8+2][z])<<16) + ((uint64_t)(tbuf[8+3][z])<<24) +
-		    ((uint64_t)(tbuf[8+4][z])<<32) + ((uint64_t)(tbuf[8+5][z])<<40) +
-		    ((uint64_t)(tbuf[8+6][z])<<48) + ((uint64_t)(tbuf[8+7][z])<<56);
+		    ((uint64_t)(u.tbuf[8+0][z])<< 0) + ((uint64_t)(u.tbuf[8+1][z])<< 8) +
+		    ((uint64_t)(u.tbuf[8+2][z])<<16) + ((uint64_t)(u.tbuf[8+3][z])<<24) +
+		    ((uint64_t)(u.tbuf[8+4][z])<<32) + ((uint64_t)(u.tbuf[8+5][z])<<40) +
+		    ((uint64_t)(u.tbuf[8+6][z])<<48) + ((uint64_t)(u.tbuf[8+7][z])<<56);
 		*(uint64_t *)&out[iN[z]+16] =
-		    ((uint64_t)(tbuf[16+0][z])<< 0) + ((uint64_t)(tbuf[16+1][z])<< 8) +
-		    ((uint64_t)(tbuf[16+2][z])<<16) + ((uint64_t)(tbuf[16+3][z])<<24) +
-		    ((uint64_t)(tbuf[16+4][z])<<32) + ((uint64_t)(tbuf[16+5][z])<<40) +
-		    ((uint64_t)(tbuf[16+6][z])<<48) + ((uint64_t)(tbuf[16+7][z])<<56);
+		    ((uint64_t)(u.tbuf[16+0][z])<< 0) + ((uint64_t)(u.tbuf[16+1][z])<< 8) +
+		    ((uint64_t)(u.tbuf[16+2][z])<<16) + ((uint64_t)(u.tbuf[16+3][z])<<24) +
+		    ((uint64_t)(u.tbuf[16+4][z])<<32) + ((uint64_t)(u.tbuf[16+5][z])<<40) +
+		    ((uint64_t)(u.tbuf[16+6][z])<<48) + ((uint64_t)(u.tbuf[16+7][z])<<56);
 		*(uint64_t *)&out[iN[z]+24] =
-		    ((uint64_t)(tbuf[24+0][z])<< 0) + ((uint64_t)(tbuf[24+1][z])<< 8) +
-		    ((uint64_t)(tbuf[24+2][z])<<16) + ((uint64_t)(tbuf[24+3][z])<<24) +
-		    ((uint64_t)(tbuf[24+4][z])<<32) + ((uint64_t)(tbuf[24+5][z])<<40) +
-		    ((uint64_t)(tbuf[24+6][z])<<48) + ((uint64_t)(tbuf[24+7][z])<<56);
+		    ((uint64_t)(u.tbuf[24+0][z])<< 0) + ((uint64_t)(u.tbuf[24+1][z])<< 8) +
+		    ((uint64_t)(u.tbuf[24+2][z])<<16) + ((uint64_t)(u.tbuf[24+3][z])<<24) +
+		    ((uint64_t)(u.tbuf[24+4][z])<<32) + ((uint64_t)(u.tbuf[24+5][z])<<40) +
+		    ((uint64_t)(u.tbuf[24+6][z])<<48) + ((uint64_t)(u.tbuf[24+7][z])<<56);
 		iN[z] += 32;
 	    }
 
@@ -1830,7 +1833,7 @@ unsigned char *rans_uncompress_O1_32x16(unsigned char *in, unsigned int in_size,
 	int T;
 	for (z = 0; z < NX; z++)
 	    for (T = 0; T < tidx; T++)
-		out[iN[z]++] = tbuf[T][z];
+		out[iN[z]++] = u.tbuf[T][z];
     }
 
     // Remainder
@@ -1966,7 +1969,10 @@ int main(int argc, char **argv) {
 	    in_sz += len;
 	}
 
-	int trials = 10;
+#ifndef NTRIALS
+#  define NTRIALS 10
+#endif
+	int trials = NTRIALS;
 	while (trials--) {
 	    // Warmup
 	    for (i = 0; i < nb; i++) memset(bc[i].blk, 0, bc[i].sz);
