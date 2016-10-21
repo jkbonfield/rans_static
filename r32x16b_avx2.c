@@ -462,17 +462,23 @@ static void hist4p(unsigned char *in, unsigned int in_size, int *F0) {
 static void hist8(unsigned char *in, unsigned int in_size, int F0[256]) {
     int F1[256+MAGIC] = {0}, F2[256+MAGIC] = {0}, F3[256+MAGIC] = {0};
     int F4[256+MAGIC] = {0}, F5[256+MAGIC] = {0}, F6[256+MAGIC] = {0}, F7[256+MAGIC] = {0};
-    int i, i8 = in_size & ~7;
-    for (i = 0; i < i8; i+=8) {
-	F0[in[i+0]]++;
-	F1[in[i+1]]++;
-	F2[in[i+2]]++;
-	F3[in[i+3]]++;
-	F4[in[i+4]]++;
-	F5[in[i+5]]++;
-	F6[in[i+6]]++;
-	F7[in[i+7]]++;
+    int i, i4 = ((in_size-4) & ~7)/4; // permits vnext
+    uint32_t *in4 = (uint32_t *)in;
+    uint32_t vnext = i4 ? in4[0] : 0;
+    for (i = 0; i < i4; i+=2) {
+	uint32_t v = vnext; vnext = in4[i+1];
+	F0[(unsigned char)(v>> 0)]++;
+	F1[(unsigned char)(v>> 8)]++;
+	F2[(unsigned char)(v>>16)]++;
+	F3[(unsigned char)(v>>24)]++;
+	v = vnext; vnext = in4[i+2];
+	F4[(unsigned char)(v>> 0)]++;
+	F5[(unsigned char)(v>> 8)]++;
+	F6[(unsigned char)(v>>16)]++;
+	F7[(unsigned char)(v>>24)]++;
     }
+
+    i *= 4;
     while (i < in_size)
 	F0[in[i++]]++;
 
