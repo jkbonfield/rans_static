@@ -411,11 +411,15 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
 #include <sys/time.h>
 #include "r16N.h"
 
+#ifndef TF_SHIFT
 #define TF_SHIFT 12
+#endif
 #define TOTFREQ (1<<TF_SHIFT)
 
 // 9 is considerably faster in the O1sfb variant due to reduced table size.
+#ifndef TF_SHIFT_O1
 #define TF_SHIFT_O1 9
+#endif
 #define TOTFREQ_O1 (1<<TF_SHIFT_O1)
 
 
