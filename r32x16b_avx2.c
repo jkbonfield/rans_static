@@ -419,7 +419,7 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
 
 // 9 is considerably faster on some data sets due to reduced table size.
 #ifndef TF_SHIFT_O1
-#  define TF_SHIFT_O1 10
+#  define TF_SHIFT_O1 9
 #endif
 #define TOTFREQ_O1 (1<<TF_SHIFT_O1)
 
@@ -559,7 +559,7 @@ __m256i _mm256_div_epi32(__m256i a, __m256i b) {
 
 #if 1
 // Simulated gather.  This is sometimes faster as it can run on other ports.
-__m256i _mm256_i32gather_epi32x(int *b, __m256i idx, int size) {
+static inline __m256i _mm256_i32gather_epi32x(int *b, __m256i idx, int size) {
     int c[8];
     _mm256_store_si256((__m256i *)c, idx);
     return _mm256_set_epi32(b[c[7]], b[c[6]], b[c[5]], b[c[4]], b[c[3]], b[c[2]], b[c[1]], b[c[0]]);
@@ -1665,7 +1665,7 @@ unsigned char *rans_uncompress_O1_32x16(unsigned char *in, unsigned int in_size,
 	Lv4 = _mm256_slli_epi32(Lv4, TF_SHIFT_O1);
 	masked4 = _mm256_add_epi32(masked4, Lv4);
 
-	__m256i Sv1 = _mm256_i32gather_epi32((int *)&s3[0][0], masked1, sizeof(s3[0][0]));
+	__m256i Sv1 = _mm256_i32gather_epi32x((int *)&s3[0][0], masked1, sizeof(s3[0][0]));
 	__m256i Sv2 = _mm256_i32gather_epi32x((int *)&s3[0][0], masked2, sizeof(s3[0][0]));
 
 	//  f[z] = S[z]>>(TF_SHIFT_O1+8);
