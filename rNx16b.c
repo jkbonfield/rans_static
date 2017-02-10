@@ -386,8 +386,6 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
              );
     *pptr = (uint8_t *)ptr;
 
-    *pptr = (uint8_t *)ptr;
-
 #endif
 
     *r = x;
@@ -677,15 +675,30 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
     int out_end = (out_sz&~(NX-1));
     const uint32_t mask = (1u << TF_SHIFT)-1;
 
+    // assume NX is divisible by 4
+    assert(NX%4==0);
     for (i=0; i < out_end; i+=NX) {
-#pragma omp simd
-	for (z = 0; z < NX; z++) {
-	  uint32_t S = s3[R[z] & mask];
-	  uint16_t f = S>>(TF_SHIFT+8), b = (S>>8) & mask; uint8_t s = S;
+	for (z = 0; z < NX; z+=4) {
+	    uint32_t S[4];
+	    S[0] = s3[R[z+0] & mask];
+	    S[1] = s3[R[z+1] & mask];
+	    S[2] = s3[R[z+2] & mask];
+	    S[3] = s3[R[z+3] & mask];
 
-	  R[z] = f * (R[z] >> TF_SHIFT) + b;
-	  out[i+z] = s;
-	  RansDecRenorm(&R[z], &cp);
+	    R[z+0] = (S[0]>>(TF_SHIFT+8)) * (R[z+0] >> TF_SHIFT) + ((S[0]>>8) & mask);
+	    R[z+1] = (S[1]>>(TF_SHIFT+8)) * (R[z+1] >> TF_SHIFT) + ((S[1]>>8) & mask);
+	    R[z+2] = (S[2]>>(TF_SHIFT+8)) * (R[z+2] >> TF_SHIFT) + ((S[2]>>8) & mask);
+	    R[z+3] = (S[3]>>(TF_SHIFT+8)) * (R[z+3] >> TF_SHIFT) + ((S[3]>>8) & mask);
+
+	    RansDecRenorm(&R[z+0], &cp);
+	    RansDecRenorm(&R[z+1], &cp);
+	    RansDecRenorm(&R[z+2], &cp);
+	    RansDecRenorm(&R[z+3], &cp);
+
+	    out[i+z+0] = S[0];
+	    out[i+z+1] = S[1];
+	    out[i+z+2] = S[2];
+	    out[i+z+3] = S[3];
 	}
     }
 
@@ -1032,33 +1045,60 @@ unsigned char *rans_uncompress_O1_4x16(unsigned char *in, unsigned int in_size,
 	RansDecInit(&ransN[z], &ptr);
 
     int isz4 = out_sz/NX;
-    int lN[NX] = {0}, iN[NX];
+    int iN[NX];
+    uint8_t c[NX] = {0};
     for (z = 0; z < NX; z++)
 	iN[z] = z*isz4;
 
     // Non SIMD variant, using temporary local buffer to avoid too many
     // scattered memory writes.
 #define TB 32
-    uint32_t tbuf[TB][NX];
+    uint8_t tbuf[TB][NX];
     int tidx = 0, T;
+    assert(NX%4==0);
     for (; iN[0] < isz4; ) {
-	uint32_t c[NX];
-	for (z = 0; z < NX; z++) {
-	    uint32_t m = ransN[z] & ((1u << TF_SHIFT_O1)-1);
-	    ransN[z] = sfb[lN[z]][m].f * (ransN[z]>>TF_SHIFT_O1) + sfb[lN[z]][m].b;
-	    lN[z] = c[z] = ssym[lN[z]][m];
-	    RansDecRenorm(&ransN[z], &ptr);	
+	for (z = 0; z < NX; z+=4) {
+	    uint32_t m[4];
+	    m[0] = ransN[z+0] & ((1u << TF_SHIFT_O1)-1);
+	    m[1] = ransN[z+1] & ((1u << TF_SHIFT_O1)-1);
 
-	    tbuf[tidx][z] = c[z];
+	    ransN[z+0] = sfb[c[z+0]][m[0]].f * (ransN[z+0]>>TF_SHIFT_O1) + sfb[c[z+0]][m[0]].b;
+	    ransN[z+1] = sfb[c[z+1]][m[1]].f * (ransN[z+1]>>TF_SHIFT_O1) + sfb[c[z+1]][m[1]].b;
+
+	    c[z+0] = ssym[c[z+0]][m[0]];
+	    c[z+1] = ssym[c[z+1]][m[1]];
+
+	    m[2] = ransN[z+2] & ((1u << TF_SHIFT_O1)-1);
+	    m[3] = ransN[z+3] & ((1u << TF_SHIFT_O1)-1);
+
+	    ransN[z+2] = sfb[c[z+2]][m[2]].f * (ransN[z+2]>>TF_SHIFT_O1) + sfb[c[z+2]][m[2]].b;
+	    ransN[z+3] = sfb[c[z+3]][m[3]].f * (ransN[z+3]>>TF_SHIFT_O1) + sfb[c[z+3]][m[3]].b;
+
+	    c[z+2] = ssym[c[z+2]][m[2]];
+	    c[z+3] = ssym[c[z+3]][m[3]];
+
+	    RansDecRenorm(&ransN[z+0], &ptr);
+	    RansDecRenorm(&ransN[z+1], &ptr);
+	    RansDecRenorm(&ransN[z+2], &ptr);
+	    RansDecRenorm(&ransN[z+3], &ptr);
+
+	    // optimises to a 32-bit assignment
+	    memcpy(&tbuf[tidx][z+0], &c[z+0], 4);
 	}
 	iN[0]++;
 	if (++tidx == TB) {
 	    iN[0] -= TB;
-	    for (z = 0; z < NX; z++) {
-		for (T = 0; T < TB; T++)
-		    out[iN[z]+T] = tbuf[T][z];
-
-		iN[z] += TB;
+	    for (z = 0; z < NX; z+=4) {
+		for (T = 0; T < TB; T++) {
+		    out[iN[z+0]+T] = tbuf[T][z+0];
+		    out[iN[z+1]+T] = tbuf[T][z+1];
+		    out[iN[z+2]+T] = tbuf[T][z+2];
+		    out[iN[z+3]+T] = tbuf[T][z+3];
+		}
+		iN[z+0] += TB;
+		iN[z+1] += TB;
+		iN[z+2] += TB;
+		iN[z+3] += TB;
 	    }
 	    tidx = 0;
 	}
@@ -1073,11 +1113,11 @@ unsigned char *rans_uncompress_O1_4x16(unsigned char *in, unsigned int in_size,
     z = NX-1;
     for (; iN[z] < out_sz; ) {
 	uint32_t m = ransN[z] & ((1u<<TF_SHIFT_O1)-1);
-	unsigned char c = ssym[lN[z]][m];
-	out[iN[z]++] = c;
-	ransN[z] = sfb[lN[z]][m].f * (ransN[z]>>TF_SHIFT_O1) + sfb[lN[z]][m].b;
+	unsigned char C = ssym[c[z]][m];
+	out[iN[z]++] = C;
+	ransN[z] = sfb[c[z]][m].f * (ransN[z]>>TF_SHIFT_O1) + sfb[c[z]][m].b;
 	RansDecRenorm(&ransN[z], &ptr);
-	lN[z] = c;
+	c[z] = C;
     }
     
     *out_size = out_sz;
@@ -1202,7 +1242,10 @@ int main(int argc, char **argv) {
 	    in_sz += len;
 	}
 
-	int trials = 10;
+#ifndef NTRIALS
+#define NTRIALS 10
+#endif
+	int trials = NTRIALS;
 	while (trials--) {
 	    // Warmup
 	    for (i = 0; i < nb; i++) memset(bc[i].blk, 0, bc[i].sz);
