@@ -1052,11 +1052,8 @@ unsigned char *rans_uncompress_O1_4x16(unsigned char *in, unsigned int in_size,
 
     // Non SIMD variant, using temporary local buffer to avoid too many
     // scattered memory writes.
-#define TB 32
-    uint8_t tbuf[TB][NX];
-    int tidx = 0, T;
-    assert(NX%4==0);
     for (; iN[0] < isz4; ) {
+#if 0
 	for (z = 0; z < NX; z+=4) {
 	    uint32_t m[4];
 	    m[0] = ransN[z+0] & ((1u << TF_SHIFT_O1)-1);
@@ -1068,6 +1065,9 @@ unsigned char *rans_uncompress_O1_4x16(unsigned char *in, unsigned int in_size,
 	    c[z+0] = ssym[c[z+0]][m[0]];
 	    c[z+1] = ssym[c[z+1]][m[1]];
 
+	    out[iN[z+0]++] = c[z+0];
+	    out[iN[z+1]++] = c[z+1];
+
 	    m[2] = ransN[z+2] & ((1u << TF_SHIFT_O1)-1);
 	    m[3] = ransN[z+3] & ((1u << TF_SHIFT_O1)-1);
 
@@ -1077,37 +1077,45 @@ unsigned char *rans_uncompress_O1_4x16(unsigned char *in, unsigned int in_size,
 	    c[z+2] = ssym[c[z+2]][m[2]];
 	    c[z+3] = ssym[c[z+3]][m[3]];
 
+	    out[iN[z+2]++] = c[z+2];
+	    out[iN[z+3]++] = c[z+3];
+
 	    RansDecRenorm(&ransN[z+0], &ptr);
 	    RansDecRenorm(&ransN[z+1], &ptr);
 	    RansDecRenorm(&ransN[z+2], &ptr);
 	    RansDecRenorm(&ransN[z+3], &ptr);
+	}
+#else
+	for (z = 0; z < NX; z+=4) {
+	    uint32_t m[4];
+	    m[0] = ransN[z+0] & ((1u << TF_SHIFT_O1)-1);
+	    m[1] = ransN[z+1] & ((1u << TF_SHIFT_O1)-1);
+	    m[2] = ransN[z+2] & ((1u << TF_SHIFT_O1)-1);
+	    m[3] = ransN[z+3] & ((1u << TF_SHIFT_O1)-1);
 
-	    // optimises to a 32-bit assignment
-	    memcpy(&tbuf[tidx][z+0], &c[z+0], 4);
+	    ransN[z+0] = sfb[c[z+0]][m[0]].f * (ransN[z+0]>>TF_SHIFT_O1) + sfb[c[z+0]][m[0]].b;
+	    ransN[z+1] = sfb[c[z+1]][m[1]].f * (ransN[z+1]>>TF_SHIFT_O1) + sfb[c[z+1]][m[1]].b;
+	    ransN[z+2] = sfb[c[z+2]][m[2]].f * (ransN[z+2]>>TF_SHIFT_O1) + sfb[c[z+2]][m[2]].b;
+	    ransN[z+3] = sfb[c[z+3]][m[3]].f * (ransN[z+3]>>TF_SHIFT_O1) + sfb[c[z+3]][m[3]].b;
+
+	    c[z+0] = ssym[c[z+0]][m[0]];
+	    c[z+1] = ssym[c[z+1]][m[1]];
+	    c[z+2] = ssym[c[z+2]][m[2]];
+	    c[z+3] = ssym[c[z+3]][m[3]];
+
+	    // odd, but this order is faster.
+	    out[iN[z+3]++] = c[z+3];
+	    out[iN[z+2]++] = c[z+2];
+	    out[iN[z+1]++] = c[z+1];
+	    out[iN[z+0]++] = c[z+0];
+
+	    RansDecRenorm(&ransN[z+0], &ptr);
+	    RansDecRenorm(&ransN[z+1], &ptr);
+	    RansDecRenorm(&ransN[z+2], &ptr);
+	    RansDecRenorm(&ransN[z+3], &ptr);
 	}
-	iN[0]++;
-	if (++tidx == TB) {
-	    iN[0] -= TB;
-	    for (z = 0; z < NX; z+=4) {
-		for (T = 0; T < TB; T++) {
-		    out[iN[z+0]+T] = tbuf[T][z+0];
-		    out[iN[z+1]+T] = tbuf[T][z+1];
-		    out[iN[z+2]+T] = tbuf[T][z+2];
-		    out[iN[z+3]+T] = tbuf[T][z+3];
-		}
-		iN[z+0] += TB;
-		iN[z+1] += TB;
-		iN[z+2] += TB;
-		iN[z+3] += TB;
-	    }
-	    tidx = 0;
-	}
+#endif
     }
-
-    iN[0]-=tidx;
-    for (z = 0; z < NX; z++)
-	for (T = 0; T < tidx; T++)
-	    out[iN[z]++] = tbuf[T][z];
 
     // Remainder
     z = NX-1;
