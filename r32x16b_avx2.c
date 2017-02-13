@@ -560,7 +560,7 @@ __m256i _mm256_div_epi32(__m256i a, __m256i b) {
 #if 1
 // Simulated gather.  This is sometimes faster as it can run on other ports.
 static inline __m256i _mm256_i32gather_epi32x(int *b, __m256i idx, int size) {
-    int c[8];
+    int c[8] __attribute__((aligned(32)));
     _mm256_store_si256((__m256i *)c, idx);
     return _mm256_set_epi32(b[c[7]], b[c[6]], b[c[5]], b[c[4]], b[c[3]], b[c[2]], b[c[1]], b[c[0]]);
 }
@@ -1209,7 +1209,7 @@ unsigned char *rans_compress_O1_32x16(unsigned char *in, unsigned int in_size,
     unsigned int tab_size, rle_i, rle_j;
     RansEncSymbol syms[256][256];
     int bound = rans_compress_bound_32x16(in_size,1, NULL), z;
-    RansState ransN[NX];
+    RansState ransN[NX] __attribute__((aligned(32)));
 
     if (!out) {
 	*out_size = bound;
@@ -1557,7 +1557,7 @@ unsigned char *rans_uncompress_O1_32x16(unsigned char *in, unsigned int in_size,
     /* Load in the static tables */
     unsigned char *cp = in + 4;
     int i, j = -999, x, y, out_sz, rle_i, rle_j;
-    uint32_t s3[256][TOTFREQ_O1];
+    uint32_t s3[256][TOTFREQ_O1] __attribute__((aligned(32)));
     
     //memset(D, 0, 256*sizeof(*D));
 
@@ -1621,7 +1621,7 @@ unsigned char *rans_uncompress_O1_32x16(unsigned char *in, unsigned int in_size,
 
     // Precompute reverse lookup of frequency.
 
-    RansState ransN[NX];
+    RansState ransN[NX] __attribute__((aligned(32)));
     int z;
     uint8_t *ptr = cp;
     for (z = 0; z < NX; z++)

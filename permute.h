@@ -86,7 +86,7 @@ int main(void) {
  */
 
 #define _ 9
-static uint32_t permute[256][8] = { // reverse binary bit order
+static uint32_t permute[256][8] __attribute__((aligned(32))) = { // reverse binary bit order
   { _,_,_,_,_,_,_,_,},
   { 0,_,_,_,_,_,_,_,},
   { _,0,_,_,_,_,_,_,},
@@ -345,7 +345,7 @@ static uint32_t permute[256][8] = { // reverse binary bit order
   { 0,1,2,3,4,5,6,7,},
 };
 
-static uint32_t permutec[256][8] = { // reverse binary bit order
+static uint32_t permutec[256][8] __attribute__((aligned(32))) = { // reverse binary bit order
   { _,_,_,_,_,_,_,_,},
   { _,_,_,_,_,_,_,0,},
   { _,_,_,_,_,_,_,1,},

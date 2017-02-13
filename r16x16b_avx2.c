@@ -474,11 +474,22 @@ unsigned int rans_compress_bound_4x16(unsigned int size, int order, int *tab) {
   return 1.05*size + NX*4 + tabsz;
 }
 
+#if 1
+// Simulated gather.  This is sometimes faster as it can run on other ports.
+static inline __m256i _mm256_i32gather_epi32x(int *b, __m256i idx, int size) {
+    int c[8] __attribute__((aligned(32)));
+    _mm256_store_si256((__m256i *)c, idx);
+    return _mm256_set_epi32(b[c[7]], b[c[6]], b[c[5]], b[c[4]], b[c[3]], b[c[2]], b[c[1]], b[c[0]]);
+}
+#else
+#define _mm256_i32gather_epi32x _mm256_i32gather_epi32
+#endif
+
 unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
 				     unsigned char *out, unsigned int *out_size) {
     unsigned char *cp, *out_end;
     RansEncSymbol syms[256];
-    RansState ransN[NX];
+    RansState ransN[NX] __attribute__((aligned(32)));
     uint8_t* ptr;
     int F[256+MAGIC] = {0}, i, j, tab_size, rle, x, fsum = 0;
     int m = 0, M = 0;
@@ -1472,7 +1483,10 @@ int main(int argc, char **argv) {
 	    in_sz += len;
 	}
 
-	int trials = 10;
+#ifndef NTRIALS
+#define NTRIALS 10
+#endif
+	int trials = NTRIALS;
 	while (trials--) {
 	    // Warmup
 	    for (i = 0; i < nb; i++) memset(bc[i].blk, 0, bc[i].sz);
