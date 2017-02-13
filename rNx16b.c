@@ -297,12 +297,21 @@ static inline void RansEncPutSymbol(RansState* r, uint8_t** pptr, RansEncSymbol 
     uint32_t x = *r;
     uint32_t x_max = sym->x_max;
 
+    
+#if 1 //branchless version, better at medium to high entropy
+    int c = x >= x_max;
+    uint16_t* ptr = *(uint16_t **)pptr;
+    ptr[-1] = x & 0xffff;
+    *pptr = (uint8_t *)(ptr-c);
+    x >>= c*16;
+#else
     if (x >= x_max) {
 	uint16_t* ptr = *(uint16_t **)pptr;
 	*--ptr = (uint16_t) (x & 0xffff);
 	x >>= 16;
 	*pptr = (uint8_t *)ptr;
     }
+#endif
 
     // x = C(s,x)
     // NOTE: written this way so we get a 32-bit "multiply high" when
@@ -588,10 +597,28 @@ unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
       RansEncPutSymbol(&ransN[z], &ptr, &syms[in[in_size-(i-z)]]);
 
     for (i=(in_size &~(NX-1)); i>0; i-=NX) {
-      for (z = NX-1; z >= 0; z--) {
-	RansEncSymbol *s = &syms[in[i-(NX-z)]];
-	RansEncPutSymbol(&ransN[z], &ptr, s);
+      for (z = NX-1; z >= 0; z-=4) {
+	RansEncSymbol *s0 = &syms[in[i-(NX-z+0)]];
+	RansEncSymbol *s1 = &syms[in[i-(NX-z+1)]];
+	RansEncSymbol *s2 = &syms[in[i-(NX-z+2)]];
+	RansEncSymbol *s3 = &syms[in[i-(NX-z+3)]];
+	RansEncPutSymbol(&ransN[z-0], &ptr, s0);
+	RansEncPutSymbol(&ransN[z-1], &ptr, s1);
+	RansEncPutSymbol(&ransN[z-2], &ptr, s2);
+	RansEncPutSymbol(&ransN[z-3], &ptr, s3);
+	if (NX%8 == 0) {
+	    z -= 4;
+	    RansEncSymbol *s0 = &syms[in[i-(NX-z+0)]];
+	    RansEncSymbol *s1 = &syms[in[i-(NX-z+1)]];
+	    RansEncSymbol *s2 = &syms[in[i-(NX-z+2)]];
+	    RansEncSymbol *s3 = &syms[in[i-(NX-z+3)]];
+	    RansEncPutSymbol(&ransN[z-0], &ptr, s0);
+	    RansEncPutSymbol(&ransN[z-1], &ptr, s1);
+	    RansEncPutSymbol(&ransN[z-2], &ptr, s2);
+	    RansEncPutSymbol(&ransN[z-3], &ptr, s3);
+	}
       }
+      if (z < -1) abort();
     }
 
     for (z = NX-1; z >= 0; z--)
@@ -690,15 +717,38 @@ unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
 	    R[z+2] = (S[2]>>(TF_SHIFT+8)) * (R[z+2] >> TF_SHIFT) + ((S[2]>>8) & mask);
 	    R[z+3] = (S[3]>>(TF_SHIFT+8)) * (R[z+3] >> TF_SHIFT) + ((S[3]>>8) & mask);
 
+	    out[i+z+0] = S[0];
+	    out[i+z+1] = S[1];
+	    out[i+z+2] = S[2];
+	    out[i+z+3] = S[3];
+
 	    RansDecRenorm(&R[z+0], &cp);
 	    RansDecRenorm(&R[z+1], &cp);
 	    RansDecRenorm(&R[z+2], &cp);
 	    RansDecRenorm(&R[z+3], &cp);
 
-	    out[i+z+0] = S[0];
-	    out[i+z+1] = S[1];
-	    out[i+z+2] = S[2];
-	    out[i+z+3] = S[3];
+	    if (NX%8==0) {
+		z += 4;
+		S[0] = s3[R[z+0] & mask];
+		S[1] = s3[R[z+1] & mask];
+		S[2] = s3[R[z+2] & mask];
+		S[3] = s3[R[z+3] & mask];
+
+		R[z+0] = (S[0]>>(TF_SHIFT+8)) * (R[z+0] >> TF_SHIFT) + ((S[0]>>8) & mask);
+		R[z+1] = (S[1]>>(TF_SHIFT+8)) * (R[z+1] >> TF_SHIFT) + ((S[1]>>8) & mask);
+		R[z+2] = (S[2]>>(TF_SHIFT+8)) * (R[z+2] >> TF_SHIFT) + ((S[2]>>8) & mask);
+		R[z+3] = (S[3]>>(TF_SHIFT+8)) * (R[z+3] >> TF_SHIFT) + ((S[3]>>8) & mask);
+
+		out[i+z+0] = S[0];
+		out[i+z+1] = S[1];
+		out[i+z+2] = S[2];
+		out[i+z+3] = S[3];
+
+		RansDecRenorm(&R[z+0], &cp);
+		RansDecRenorm(&R[z+1], &cp);
+		RansDecRenorm(&R[z+2], &cp);
+		RansDecRenorm(&R[z+3], &cp);
+	    }
 	}
     }
 
@@ -925,13 +975,23 @@ unsigned char *rans_compress_O1_4x16(unsigned char *in, unsigned int in_size,
 	lN[z] = c;
     }
 
+    assert(NX%4 == 0);
     for (; iN[0] >= 0; ) {
-	for (z = NX-1; z >= 0; z--) {
-	    unsigned char c;
-	    RansEncSymbol *s = &syms[c = in[iN[z]]][lN[z]];
-	    RansEncPutSymbol(&ransN[z], &ptr, s);
-	    lN[z] = c;
-	    iN[z]--;
+	for (z = NX-1; z >= 0; z-=4) {
+	    unsigned char c0;
+	    unsigned char c1;
+	    unsigned char c2;
+	    unsigned char c3;
+
+	    RansEncSymbol *s0 = &syms[c0 = in[iN[z-0]--]][lN[z-0]]; lN[z-0] = c0;
+	    RansEncSymbol *s1 = &syms[c1 = in[iN[z-1]--]][lN[z-1]]; lN[z-1] = c1;
+	    RansEncSymbol *s2 = &syms[c2 = in[iN[z-2]--]][lN[z-2]]; lN[z-2] = c2;
+	    RansEncSymbol *s3 = &syms[c3 = in[iN[z-3]--]][lN[z-3]]; lN[z-3] = c3;
+
+	    RansEncPutSymbol(&ransN[z-0], &ptr, s0);
+	    RansEncPutSymbol(&ransN[z-1], &ptr, s1);
+	    RansEncPutSymbol(&ransN[z-2], &ptr, s2);
+	    RansEncPutSymbol(&ransN[z-3], &ptr, s3);
 	}
     }
 
@@ -1053,41 +1113,8 @@ unsigned char *rans_uncompress_O1_4x16(unsigned char *in, unsigned int in_size,
     // Non SIMD variant, using temporary local buffer to avoid too many
     // scattered memory writes.
     for (; iN[0] < isz4; ) {
-#if 0
 	for (z = 0; z < NX; z+=4) {
-	    uint32_t m[4];
-	    m[0] = ransN[z+0] & ((1u << TF_SHIFT_O1)-1);
-	    m[1] = ransN[z+1] & ((1u << TF_SHIFT_O1)-1);
-
-	    ransN[z+0] = sfb[c[z+0]][m[0]].f * (ransN[z+0]>>TF_SHIFT_O1) + sfb[c[z+0]][m[0]].b;
-	    ransN[z+1] = sfb[c[z+1]][m[1]].f * (ransN[z+1]>>TF_SHIFT_O1) + sfb[c[z+1]][m[1]].b;
-
-	    c[z+0] = ssym[c[z+0]][m[0]];
-	    c[z+1] = ssym[c[z+1]][m[1]];
-
-	    out[iN[z+0]++] = c[z+0];
-	    out[iN[z+1]++] = c[z+1];
-
-	    m[2] = ransN[z+2] & ((1u << TF_SHIFT_O1)-1);
-	    m[3] = ransN[z+3] & ((1u << TF_SHIFT_O1)-1);
-
-	    ransN[z+2] = sfb[c[z+2]][m[2]].f * (ransN[z+2]>>TF_SHIFT_O1) + sfb[c[z+2]][m[2]].b;
-	    ransN[z+3] = sfb[c[z+3]][m[3]].f * (ransN[z+3]>>TF_SHIFT_O1) + sfb[c[z+3]][m[3]].b;
-
-	    c[z+2] = ssym[c[z+2]][m[2]];
-	    c[z+3] = ssym[c[z+3]][m[3]];
-
-	    out[iN[z+2]++] = c[z+2];
-	    out[iN[z+3]++] = c[z+3];
-
-	    RansDecRenorm(&ransN[z+0], &ptr);
-	    RansDecRenorm(&ransN[z+1], &ptr);
-	    RansDecRenorm(&ransN[z+2], &ptr);
-	    RansDecRenorm(&ransN[z+3], &ptr);
-	}
-#else
-	for (z = 0; z < NX; z+=4) {
-	    uint32_t m[4];
+	    uint32_t m[8];
 	    m[0] = ransN[z+0] & ((1u << TF_SHIFT_O1)-1);
 	    m[1] = ransN[z+1] & ((1u << TF_SHIFT_O1)-1);
 	    m[2] = ransN[z+2] & ((1u << TF_SHIFT_O1)-1);
@@ -1097,7 +1124,6 @@ unsigned char *rans_uncompress_O1_4x16(unsigned char *in, unsigned int in_size,
 	    ransN[z+1] = sfb[c[z+1]][m[1]].f * (ransN[z+1]>>TF_SHIFT_O1) + sfb[c[z+1]][m[1]].b;
 	    ransN[z+2] = sfb[c[z+2]][m[2]].f * (ransN[z+2]>>TF_SHIFT_O1) + sfb[c[z+2]][m[2]].b;
 	    ransN[z+3] = sfb[c[z+3]][m[3]].f * (ransN[z+3]>>TF_SHIFT_O1) + sfb[c[z+3]][m[3]].b;
-
 	    c[z+0] = ssym[c[z+0]][m[0]];
 	    c[z+1] = ssym[c[z+1]][m[1]];
 	    c[z+2] = ssym[c[z+2]][m[2]];
@@ -1113,8 +1139,38 @@ unsigned char *rans_uncompress_O1_4x16(unsigned char *in, unsigned int in_size,
 	    RansDecRenorm(&ransN[z+1], &ptr);
 	    RansDecRenorm(&ransN[z+2], &ptr);
 	    RansDecRenorm(&ransN[z+3], &ptr);
-	}
+
+#ifndef __clang__
+	    if (NX%8 == 0) {
+		z += 4;
+		m[0] = ransN[z+0] & ((1u << TF_SHIFT_O1)-1);
+		m[1] = ransN[z+1] & ((1u << TF_SHIFT_O1)-1);
+		m[2] = ransN[z+2] & ((1u << TF_SHIFT_O1)-1);
+		m[3] = ransN[z+3] & ((1u << TF_SHIFT_O1)-1);
+
+		ransN[z+0] = sfb[c[z+0]][m[0]].f * (ransN[z+0]>>TF_SHIFT_O1) + sfb[c[z+0]][m[0]].b;
+		ransN[z+1] = sfb[c[z+1]][m[1]].f * (ransN[z+1]>>TF_SHIFT_O1) + sfb[c[z+1]][m[1]].b;
+		ransN[z+2] = sfb[c[z+2]][m[2]].f * (ransN[z+2]>>TF_SHIFT_O1) + sfb[c[z+2]][m[2]].b;
+		ransN[z+3] = sfb[c[z+3]][m[3]].f * (ransN[z+3]>>TF_SHIFT_O1) + sfb[c[z+3]][m[3]].b;
+
+		c[z+0] = ssym[c[z+0]][m[0]];
+		c[z+1] = ssym[c[z+1]][m[1]];
+		c[z+2] = ssym[c[z+2]][m[2]];
+		c[z+3] = ssym[c[z+3]][m[3]];
+
+		// odd, but this order is faster.
+		out[iN[z+3]++] = c[z+3];
+		out[iN[z+2]++] = c[z+2];
+		out[iN[z+1]++] = c[z+1];
+		out[iN[z+0]++] = c[z+0];
+
+		RansDecRenorm(&ransN[z+0], &ptr);
+		RansDecRenorm(&ransN[z+1], &ptr);
+		RansDecRenorm(&ransN[z+2], &ptr);
+		RansDecRenorm(&ransN[z+3], &ptr);
+	    }
 #endif
+	}
     }
 
     // Remainder
