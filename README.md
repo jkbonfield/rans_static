@@ -146,7 +146,7 @@ distinct values each, representing high and low complexity data.
 
 
 Tested on an "Intel(R) Core(TM) i5-4570 CPU @ 3.20GHz" (from
-/proc/cpuinfo on Ubuntu Trusty) using Intel icc-15 compiler.
+/proc/cpuinfo on Ubuntu Trusty) using Gcc, Clang and Intel compilers.
 
 Also if cache memory is tight on your CPU, consider switching to the
 rans_uncompress_O1c_4x16() function instead of rans_uncompress_O1_sfb_4x16()
@@ -154,119 +154,303 @@ or changing ssym[] array to be uint8_t instead of uint16_t in sfb.  (This
 will work just fine as 8-bit instead, but seems to be slower on my
 system.)
 
-icc-15 Q8 test file, order 0:
+-----------------------------------------------------------------------------
 
-    arith_static        244.6 MB/s enc, 166.2 MB/s dec	 73124567 bytes -> 16854053 bytes
-    rANS_static4x8      300.8 MB/s enc, 657.6 MB/s dec	 73124567 bytes -> 16847496 bytes
-    rANS_static4x16     366.4 MB/s enc, 637.4 MB/s dec	 73124567 bytes -> 16847764 bytes
-    rANS_static4c       294.6 MB/s enc, 317.7 MB/s dec	 73124567 bytes -> 16847633 bytes
-    rANS_static4j       298.8 MB/s enc, 347.5 MB/s dec	 73124567 bytes -> 16847597 bytes
-    rANS_static64c      417.2 MB/s enc, 517.1 MB/s dec	 73124567 bytes -> 16848348 bytes
-    r4x16               336.4 MB/s enc, 370.7 MB/s dec	 73124567 bytes -> 16848884 bytes
-    r8x16               339.7 MB/s enc, 540.6 MB/s dec	 73124567 bytes -> 16850828 bytes
-    r16x16              340.3 MB/s enc, 648.3 MB/s dec	 73124567 bytes -> 16854740 bytes
-    r32x16              298.3 MB/s enc, 636.7 MB/s dec	 73124567 bytes -> 16862640 bytes
-    r4x16b              336.6 MB/s enc, 432.2 MB/s dec	 73124567 bytes -> 16847764 bytes
-    r8x16b              339.7 MB/s enc, 433.7 MB/s dec	 73124567 bytes -> 16848588 bytes
-    r16x16b             342.0 MB/s enc, 433.8 MB/s dec	 73124567 bytes -> 16850260 bytes
-    r32x16b             301.8 MB/s enc, 410.9 MB/s dec	 73124567 bytes -> 16853680 bytes
-    r8x16_sse           332.6 MB/s enc, 563.8 MB/s dec	 73124567 bytes -> 16850828 bytes
-    r8x16_avx2          341.1 MB/s enc, 582.9 MB/s dec	 73124567 bytes -> 16850828 bytes
-    r16x16_avx2         339.8 MB/s enc, 971.1 MB/s dec	 73124567 bytes -> 16854740 bytes
-    r32x16_avx2         293.5 MB/s enc, 891.8 MB/s dec	 73124567 bytes -> 16862640 bytes
-    r8x16b_avx2         346.2 MB/s enc, 583.4 MB/s dec	 73124567 bytes -> 16848588 bytes
-    r16x16b_avx2        347.4 MB/s enc, 972.1 MB/s dec	 73124567 bytes -> 16850260 bytes
-    r32x16b_avx2        470.3 MB/s enc, 1343.2 MB/s dec	 73124567 bytes -> 16853680 bytes
+gcc 6.2.0, q8 test file, order 0
+    
+    arith_static        240.2 MB/s enc, 146.5 MB/s dec	 73124567 bytes -> 16852961 bytes
+    rANS_static4c       294.2 MB/s enc, 335.2 MB/s dec	 73124567 bytes -> 16850374 bytes
+    rANS_static4j       294.3 MB/s enc, 328.1 MB/s dec	 73124567 bytes -> 16847058 bytes
+    rANS_static4x16     369.3 MB/s enc, 664.5 MB/s dec	 73124567 bytes -> 16847245 bytes
+    rANS_static4x8      300.0 MB/s enc, 681.2 MB/s dec	 73124567 bytes -> 16847000 bytes
+    rANS_static64c      385.5 MB/s enc, 538.4 MB/s dec	 73124567 bytes -> 16851067 bytes
+    r4x16               354.2 MB/s enc, 389.3 MB/s dec	 73124567 bytes -> 16848349 bytes
+    r4x16b              386.5 MB/s enc, 588.5 MB/s dec	 73124567 bytes -> 16847245 bytes
+    r8x16               351.7 MB/s enc, 393.3 MB/s dec	 73124567 bytes -> 16850295 bytes
+    r8x16_avx2          351.6 MB/s enc, 393.1 MB/s dec	 73124567 bytes -> 16850295 bytes
+    r8x16_sse           352.1 MB/s enc, 576.8 MB/s dec	 73124567 bytes -> 16850295 bytes
+    r8x16b              383.9 MB/s enc, 583.2 MB/s dec	 73124567 bytes -> 16848087 bytes
+    r8x16b_avx2         360.0 MB/s enc, 404.1 MB/s dec	 73124567 bytes -> 16848087 bytes
+    r16x16              283.2 MB/s enc, 394.3 MB/s dec	 73124567 bytes -> 16854189 bytes
+    r16x16_avx2         283.2 MB/s enc, 895.9 MB/s dec	 73124567 bytes -> 16854189 bytes
+    r16x16b             369.3 MB/s enc, 527.1 MB/s dec	 73124567 bytes -> 16849773 bytes
+    r16x16b_avx2        289.0 MB/s enc, 982.3 MB/s dec	 73124567 bytes -> 16849773 bytes
+    r32x16              291.2 MB/s enc, 380.3 MB/s dec	 73124567 bytes -> 16861939 bytes
+    r32x16_avx2         291.2 MB/s enc, 904.1 MB/s dec	 73124567 bytes -> 16861939 bytes
+    r32x16b             377.1 MB/s enc, 537.1 MB/s dec	 73124567 bytes -> 16853107 bytes
+    r32x16b_avx2        534.7 MB/s enc, 1430.6 MB/s dec	 73124567 bytes -> 16853107 bytes
+    
+gcc 6.2.0, q40 test file, order 0
 
-icc-15 Q40 test file, order 0:
+    arith_static        246.0 MB/s enc, 144.0 MB/s dec	 94602182 bytes -> 53713263 bytes
+    rANS_static4c       305.0 MB/s enc, 360.4 MB/s dec	 94602182 bytes -> 53694731 bytes
+    rANS_static4j       305.0 MB/s enc, 333.7 MB/s dec	 94602182 bytes -> 53690573 bytes
+    rANS_static4x16     302.4 MB/s enc, 659.2 MB/s dec	 94602182 bytes -> 53689007 bytes
+    rANS_static4x8      326.9 MB/s enc, 673.2 MB/s dec	 94602182 bytes -> 53688173 bytes
+    rANS_static64c      299.7 MB/s enc, 423.3 MB/s dec	 94602182 bytes -> 53695650 bytes
+    r4x16               286.8 MB/s enc, 388.3 MB/s dec	 94602182 bytes -> 53690447 bytes
+    r4x16b              382.9 MB/s enc, 582.6 MB/s dec	 94602182 bytes -> 53689007 bytes
+    r8x16               238.4 MB/s enc, 392.8 MB/s dec	 94602182 bytes -> 53692915 bytes
+    r8x16_avx2          238.1 MB/s enc, 393.0 MB/s dec	 94602182 bytes -> 53692915 bytes
+    r8x16_sse           238.3 MB/s enc, 571.0 MB/s dec	 94602182 bytes -> 53692915 bytes
+    r8x16b              379.8 MB/s enc, 581.7 MB/s dec	 94602182 bytes -> 53690035 bytes
+    r8x16b_avx2         241.6 MB/s enc, 403.2 MB/s dec	 94602182 bytes -> 53690035 bytes
+    r16x16              198.3 MB/s enc, 391.4 MB/s dec	 94602182 bytes -> 53697949 bytes
+    r16x16_avx2         198.2 MB/s enc, 879.0 MB/s dec	 94602182 bytes -> 53697949 bytes
+    r16x16b             365.0 MB/s enc, 527.3 MB/s dec	 94602182 bytes -> 53692189 bytes
+    r16x16b_avx2        204.6 MB/s enc, 970.6 MB/s dec	 94602182 bytes -> 53692189 bytes
+    r32x16              202.5 MB/s enc, 329.2 MB/s dec	 94602182 bytes -> 53708047 bytes
+    r32x16_avx2         202.4 MB/s enc, 705.4 MB/s dec	 94602182 bytes -> 53708047 bytes
+    r32x16b             372.4 MB/s enc, 533.3 MB/s dec	 94602182 bytes -> 53696527 bytes
+    r32x16b_avx2        525.1 MB/s enc, 1415.0 MB/s dec	 94602182 bytes -> 53696527 bytes
+    
+gcc 6.2.0, q8 test file, order 1
+    
+    arith_static        175.9 MB/s enc, 131.3 MB/s dec	 73124567 bytes -> 15858338 bytes
+    rANS_static4c       190.9 MB/s enc, 280.7 MB/s dec	 73124567 bytes -> 15849499 bytes
+    rANS_static4j       191.6 MB/s enc, 281.3 MB/s dec	 73124567 bytes -> 15849499 bytes
+    rANS_static4x16     231.8 MB/s enc, 478.1 MB/s dec	 73124567 bytes -> 15866708 bytes
+    rANS_static4x8      197.5 MB/s enc, 430.0 MB/s dec	 73124567 bytes -> 15849499 bytes
+    rANS_static64c      241.7 MB/s enc, 391.5 MB/s dec	 73124567 bytes -> 15850232 bytes
+    r4x16               231.7 MB/s enc, 467.8 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r4x16b              251.0 MB/s enc, 461.0 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16               231.2 MB/s enc, 468.1 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16_avx2          231.2 MB/s enc, 469.1 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16_sse           231.7 MB/s enc, 468.9 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16b              234.1 MB/s enc, 433.0 MB/s dec	 73124567 bytes -> 15867650 bytes
+    r8x16b_avx2         231.8 MB/s enc, 469.1 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r16x16              231.2 MB/s enc, 468.7 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r16x16_avx2         231.6 MB/s enc, 468.7 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r16x16b             238.3 MB/s enc, 390.2 MB/s dec	 73124567 bytes -> 15869416 bytes
+    r16x16b_avx2        230.7 MB/s enc, 469.0 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r32x16              230.9 MB/s enc, 468.8 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r32x16_avx2         ERR
+    r32x16b             236.0 MB/s enc, 392.1 MB/s dec	 73124567 bytes -> 15872840 bytes
+    r32x16b_avx2        237.1 MB/s enc, 1039.4 MB/s dec	 73124567 bytes -> 15872840 bytes
+    
+gcc 6.2.0, q40 test file, order 1
 
-    arith_static        265.9 MB/s enc, 168.5 MB/s dec	 94602182 bytes -> 53711390 bytes
-    rANS_static4x8      318.3 MB/s enc, 650.0 MB/s dec	 94602182 bytes -> 53687617 bytes
-    rANS_static4x16     297.6 MB/s enc, 630.7 MB/s dec	 94602182 bytes -> 53688461 bytes
-    rANS_static4c       295.2 MB/s enc, 336.8 MB/s dec	 94602182 bytes -> 53690171 bytes
-    rANS_static4j       301.3 MB/s enc, 357.6 MB/s dec	 94602182 bytes -> 53690159 bytes
-    rANS_static64c      318.6 MB/s enc, 410.1 MB/s dec	 94602182 bytes -> 53691108 bytes
-    r4x16               277.6 MB/s enc, 371.0 MB/s dec	 94602182 bytes -> 53689917 bytes
-    r8x16               232.6 MB/s enc, 541.0 MB/s dec	 94602182 bytes -> 53692425 bytes
-    r16x16              226.2 MB/s enc, 638.3 MB/s dec	 94602182 bytes -> 53697503 bytes
-    r32x16              207.7 MB/s enc, 598.2 MB/s dec	 94602182 bytes -> 53707709 bytes
-    r4x16b              271.4 MB/s enc, 429.8 MB/s dec	 94602182 bytes -> 53688461 bytes
-    r8x16b              230.8 MB/s enc, 432.1 MB/s dec	 94602182 bytes -> 53689513 bytes
-    r16x16b             228.2 MB/s enc, 432.7 MB/s dec	 94602182 bytes -> 53691679 bytes
-    r32x16b             210.6 MB/s enc, 411.1 MB/s dec	 94602182 bytes -> 53696061 bytes
-    r8x16_sse           234.1 MB/s enc, 566.7 MB/s dec	 94602182 bytes -> 53692425 bytes
-    r8x16_avx2          230.0 MB/s enc, 576.2 MB/s dec	 94602182 bytes -> 53692425 bytes
-    r16x16_avx2         224.8 MB/s enc, 961.0 MB/s dec	 94602182 bytes -> 53697503 bytes
-    r32x16_avx2         203.6 MB/s enc, 764.9 MB/s dec	 94602182 bytes -> 53707709 bytes
-    r8x16b_avx2         236.5 MB/s enc, 582.2 MB/s dec	 94602182 bytes -> 53689513 bytes
-    r16x16b_avx2        229.3 MB/s enc, 962.2 MB/s dec	 94602182 bytes -> 53691679 bytes
-    r32x16b_avx2        462.8 MB/s enc, 1330.4 MB/s dec	 94602182 bytes -> 53696061 bytes
+    arith_static        127.5 MB/s enc,  97.7 MB/s dec	 94602182 bytes -> 43399150 bytes
+    rANS_static4c       153.2 MB/s enc, 204.5 MB/s dec	 94602182 bytes -> 43165948 bytes
+    rANS_static4j       153.4 MB/s enc, 224.6 MB/s dec	 94602182 bytes -> 43165948 bytes
+    rANS_static4x16     180.5 MB/s enc, 425.6 MB/s dec	 94602182 bytes -> 43381697 bytes
+    rANS_static4x8      159.6 MB/s enc, 366.3 MB/s dec	 94602182 bytes -> 43165948 bytes
+    rANS_static64c      204.0 MB/s enc, 279.9 MB/s dec	 94602182 bytes -> 43166873 bytes
+    r4x16               181.4 MB/s enc, 421.2 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r4x16b              243.5 MB/s enc, 436.7 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16               181.2 MB/s enc, 421.6 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16_avx2          181.6 MB/s enc, 324.2 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16_sse           181.1 MB/s enc, 324.9 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16b              224.7 MB/s enc, 407.4 MB/s dec	 94602182 bytes -> 43383127 bytes
+    r8x16b_avx2         177.9 MB/s enc, 315.8 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r16x16              181.4 MB/s enc, 416.7 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r16x16_avx2         181.5 MB/s enc, 325.2 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r16x16b             227.9 MB/s enc, 379.6 MB/s dec	 94602182 bytes -> 43385998 bytes
+    r16x16b_avx2        181.2 MB/s enc, 323.9 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r32x16              181.5 MB/s enc, 422.6 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r32x16_avx2         ERR
+    r32x16b             223.5 MB/s enc, 381.4 MB/s dec	 94602182 bytes -> 43391024 bytes
+    r32x16b_avx2        234.5 MB/s enc, 985.9 MB/s dec	 94602182 bytes -> 43391024 bytes
 
-icc-15 Q40 test file, order 1:
 
-    arith_static        185.4 MB/s enc, 132.1 MB/s dec	 73124567 bytes -> 15858338 bytes
-    rANS_static4x8      194.5 MB/s enc, 366.2 MB/s dec	 73124567 bytes -> 15849499 bytes
-    rANS_static4x16     225.2 MB/s enc, 402.5 MB/s dec	 73124567 bytes -> 15866708 bytes
-    rANS_static4c       184.1 MB/s enc, 263.4 MB/s dec	 73124567 bytes -> 15849499 bytes
-    rANS_static4j       187.2 MB/s enc, 298.0 MB/s dec	 73124567 bytes -> 15849499 bytes
-    rANS_static64c      234.5 MB/s enc, 385.3 MB/s dec	 73124567 bytes -> 15850232 bytes
-    r4x16               not supported
-    r8x16               not supported
-    r16x16              not supported
-    r32x16              not supported
-    r4x16b              240.8 MB/s enc, 285.4 MB/s dec	 73124567 bytes -> 15866708 bytes
-    r8x16b              168.6 MB/s enc, 289.0 MB/s dec	 73124567 bytes -> 15867650 bytes
-    r16x16b             165.9 MB/s enc, 292.8 MB/s dec	 73124567 bytes -> 15869416 bytes
-    r32x16b             173.9 MB/s enc, 272.1 MB/s dec	 73124567 bytes -> 15872840 bytes
-    r8x16_sse           not supported
-    r8x16_avx2          not supported
-    r16x16_avx2         not supported
-    r32x16_avx2         not supported
-    r8x16b_avx2         not supported
-    r16x16b_avx2        not supported
-    r32x16b_avx2        256.9 MB/s enc, 1055.2 MB/s dec	 73124567 bytes -> 15862079 bytes
 
-icc-15 q40 test file, order 1:
+-----------------------------------------------------------------------------
 
-    arith_static        128.8 MB/s enc, 100.2 MB/s dec	 94602182 bytes -> 43399150 bytes
-    rANS_static4x8      151.4 MB/s enc, 326.9 MB/s dec	 94602182 bytes -> 43165948 bytes
-    rANS_static4x16     175.1 MB/s enc, 399.4 MB/s dec	 94602182 bytes -> 43381697 bytes
-    rANS_static4c       148.0 MB/s enc, 208.5 MB/s dec	 94602182 bytes -> 43165948 bytes
-    rANS_static4j       152.1 MB/s enc, 240.7 MB/s dec	 94602182 bytes -> 43165948 bytes
-    rANS_static64c      197.6 MB/s enc, 291.5 MB/s dec	 94602182 bytes -> 43166873 bytes
-    r4x16               not supported
-    r8x16               not supported
-    r16x16              not supported
-    r32x16              not supported
-    r4x16b              186.2 MB/s enc, 256.4 MB/s dec	 94602182 bytes -> 43381697 bytes
-    r8x16b              132.8 MB/s enc, 261.1 MB/s dec	 94602182 bytes -> 43383127 bytes
-    r16x16b             127.5 MB/s enc, 262.2 MB/s dec	 94602182 bytes -> 43385998 bytes
-    r32x16b             140.0 MB/s enc, 263.7 MB/s dec	 94602182 bytes -> 43391024 bytes
-    r8x16_sse           not supported
-    r8x16_avx2          not supported
-    r16x16_avx2         not supported
-    r32x16_avx2         not supported
-    r8x16b_avx2         not supported
-    r16x16b_avx2        not supported
-    r32x16b_avx2        250.3 MB/s enc, 874.4 MB/s dec	 94602182 bytes -> 43221095 bytes
+clang 3.7.0, q8 test file, order 0
 
-gcc-4.8 tests on r32x16b_avx2:
+    arith_static        220.6 MB/s enc, 123.3 MB/s dec	 73124567 bytes -> 16852961 bytes
+    rANS_static4c       276.1 MB/s enc, 330.8 MB/s dec	 73124567 bytes -> 16850374 bytes
+    rANS_static4j       275.6 MB/s enc, 325.8 MB/s dec	 73124567 bytes -> 16847058 bytes
+    rANS_static4x16     336.2 MB/s enc, 612.8 MB/s dec	 73124567 bytes -> 16847245 bytes
+    rANS_static4x8      280.3 MB/s enc, 636.7 MB/s dec	 73124567 bytes -> 16847000 bytes
+    rANS_static64c      374.0 MB/s enc, 545.4 MB/s dec	 73124567 bytes -> 16851067 bytes
+    r4x16               319.3 MB/s enc, 411.9 MB/s dec	 73124567 bytes -> 16848349 bytes
+    r4x16b              336.7 MB/s enc, 598.1 MB/s dec	 73124567 bytes -> 16847245 bytes
+    r8x16               282.6 MB/s enc, 338.2 MB/s dec	 73124567 bytes -> 16850295 bytes
+    r8x16_avx2          282.5 MB/s enc, 322.3 MB/s dec	 73124567 bytes -> 16850295 bytes
+    r8x16_sse           277.9 MB/s enc, 713.4 MB/s dec	 73124567 bytes -> 16850295 bytes
+    r8x16b              319.7 MB/s enc, 579.2 MB/s dec	 73124567 bytes -> 16848087 bytes
+    r8x16b_avx2         297.2 MB/s enc, 328.5 MB/s dec	 73124567 bytes -> 16848087 bytes
+    r16x16              272.7 MB/s enc, 325.1 MB/s dec	 73124567 bytes -> 16854189 bytes
+    r16x16_avx2         272.9 MB/s enc, 850.8 MB/s dec	 73124567 bytes -> 16854189 bytes
+    r16x16b             341.7 MB/s enc, 560.5 MB/s dec	 73124567 bytes -> 16849773 bytes
+    r16x16b_avx2        297.7 MB/s enc, 961.3 MB/s dec	 73124567 bytes -> 16849773 bytes
+    r32x16              277.7 MB/s enc, 332.5 MB/s dec	 73124567 bytes -> 16861939 bytes
+    r32x16_avx2         285.0 MB/s enc, 840.2 MB/s dec	 73124567 bytes -> 16861939 bytes
+    r32x16b             338.4 MB/s enc, 554.5 MB/s dec	 73124567 bytes -> 16853107 bytes
+    r32x16b_avx2        566.4 MB/s enc, 1220.7 MB/s dec	 73124567 bytes -> 16853107 bytes
+    
+clang 3.7.0, q40 test file, order 0
 
-    q8  order 0         410.0 MB/s enc, 1306.8 MB/s dec	 73124567 bytes -> 16853107 bytes
-    q40 order 0         404.4 MB/s enc, 1293.0 MB/s dec	 94602182 bytes -> 53696527 bytes
-    q8  order 1         232.3 MB/s enc, 1006.9 MB/s dec	 73124567 bytes -> 15862079 bytes
-    q40 order 1         224.5 MB/s enc, 831.1 MB/s dec	 94602182 bytes -> 43221095 bytes
+    arith_static        226.6 MB/s enc, 125.8 MB/s dec	 94602182 bytes -> 53713263 bytes
+    rANS_static4c       287.8 MB/s enc, 349.1 MB/s dec	 94602182 bytes -> 53694731 bytes
+    rANS_static4j       286.2 MB/s enc, 346.6 MB/s dec	 94602182 bytes -> 53690573 bytes
+    rANS_static4x16     276.6 MB/s enc, 610.0 MB/s dec	 94602182 bytes -> 53689007 bytes
+    rANS_static4x8      307.4 MB/s enc, 650.2 MB/s dec	 94602182 bytes -> 53688173 bytes
+    rANS_static64c      291.3 MB/s enc, 444.4 MB/s dec	 94602182 bytes -> 53695650 bytes
+    r4x16               263.6 MB/s enc, 328.9 MB/s dec	 94602182 bytes -> 53690447 bytes
+    r4x16b              335.4 MB/s enc, 594.0 MB/s dec	 94602182 bytes -> 53689007 bytes
+    r8x16               187.2 MB/s enc, 208.8 MB/s dec	 94602182 bytes -> 53692915 bytes
+    r8x16_avx2          187.6 MB/s enc, 209.1 MB/s dec	 94602182 bytes -> 53692915 bytes
+    r8x16_sse           187.6 MB/s enc, 727.3 MB/s dec	 94602182 bytes -> 53692915 bytes
+    r8x16b              316.9 MB/s enc, 590.6 MB/s dec	 94602182 bytes -> 53690035 bytes
+    r8x16b_avx2         200.4 MB/s enc, 205.5 MB/s dec	 94602182 bytes -> 53690035 bytes
+    r16x16              193.3 MB/s enc, 218.0 MB/s dec	 94602182 bytes -> 53697949 bytes
+    r16x16_avx2         190.9 MB/s enc, 800.4 MB/s dec	 94602182 bytes -> 53697949 bytes
+    r16x16b             337.8 MB/s enc, 544.0 MB/s dec	 94602182 bytes -> 53692189 bytes
+    r16x16b_avx2        207.0 MB/s enc, 955.0 MB/s dec	 94602182 bytes -> 53692189 bytes
+    r32x16              199.7 MB/s enc, 218.7 MB/s dec	 94602182 bytes -> 53708047 bytes
+    r32x16_avx2         199.8 MB/s enc, 700.0 MB/s dec	 94602182 bytes -> 53708047 bytes
+    r32x16b             341.5 MB/s enc, 556.8 MB/s dec	 94602182 bytes -> 53696527 bytes
+    r32x16b_avx2        553.4 MB/s enc, 1216.0 MB/s dec	 94602182 bytes -> 53696527 bytes
+    
+   
+clang 3.7.0, q8 test file, order 1
 
-gcc-5.3 tests on r32x16b_avx2:
+    
+    arith_static        171.1 MB/s enc, 107.5 MB/s dec	 73124567 bytes -> 15858338 bytes
+    rANS_static4c       186.7 MB/s enc, 279.4 MB/s dec	 73124567 bytes -> 15849499 bytes
+    rANS_static4j       185.8 MB/s enc, 264.0 MB/s dec	 73124567 bytes -> 15849499 bytes
+    rANS_static4x16     218.9 MB/s enc, 434.7 MB/s dec	 73124567 bytes -> 15866708 bytes
+    rANS_static4x8      186.7 MB/s enc, 405.2 MB/s dec	 73124567 bytes -> 15849499 bytes
+    rANS_static64c      242.7 MB/s enc, 430.9 MB/s dec	 73124567 bytes -> 15850232 bytes
+    r4x16               212.5 MB/s enc, 422.7 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r4x16b              219.9 MB/s enc, 288.1 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16               218.3 MB/s enc, 436.9 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16_avx2          218.7 MB/s enc, 454.0 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16_sse           218.1 MB/s enc, 461.4 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16b              222.7 MB/s enc, 329.5 MB/s dec	 73124567 bytes -> 15867650 bytes
+    r8x16b_avx2         219.1 MB/s enc, 467.5 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r16x16              213.2 MB/s enc, 425.3 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r16x16_avx2         213.8 MB/s enc, 457.3 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r16x16b             212.7 MB/s enc, 343.5 MB/s dec	 73124567 bytes -> 15869416 bytes
+    r16x16b_avx2        219.0 MB/s enc, 467.3 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r32x16              218.3 MB/s enc, 433.4 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r32x16_avx2         ERR
+    r32x16b             202.2 MB/s enc, 341.1 MB/s dec	 73124567 bytes -> 15872840 bytes
+    r32x16b_avx2        269.8 MB/s enc, 842.3 MB/s dec	 73124567 bytes -> 15872840 bytes
 
-    q8  order 0         519.2 MB/s enc, 1454.1 MB/s dec	 73124567 bytes -> 16853107 bytes
-    q40 order 0         508.3 MB/s enc, 1439.7 MB/s dec	 94602182 bytes -> 53696527 bytes
-    q8  order 1         236.3 MB/s enc, 1029.9 MB/s dec	 73124567 bytes -> 15862079 bytes
-    q40 order 1         227.8 MB/s enc, 856.8 MB/s dec	 94602182 bytes -> 43221095 bytes
+clang 3.7.0, q40 test file, order 1
 
-gcc-6.1 tests on r32x16b_avx2:
+    arith_static        121.6 MB/s enc,  79.5 MB/s dec	 94602182 bytes -> 43399150 bytes
+    rANS_static4c       153.3 MB/s enc, 215.7 MB/s dec	 94602182 bytes -> 43165948 bytes
+    rANS_static4j       154.7 MB/s enc, 215.8 MB/s dec	 94602182 bytes -> 43165948 bytes
+    rANS_static4x16     175.2 MB/s enc, 392.4 MB/s dec	 94602182 bytes -> 43381697 bytes
+    rANS_static4x8      155.3 MB/s enc, 356.7 MB/s dec	 94602182 bytes -> 43165948 bytes
+    rANS_static64c      203.9 MB/s enc, 309.2 MB/s dec	 94602182 bytes -> 43166873 bytes
+    r4x16               175.4 MB/s enc, 399.3 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r4x16b              212.5 MB/s enc, 284.7 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16               173.3 MB/s enc, 399.8 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16_avx2          175.5 MB/s enc, 314.3 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16_sse           173.9 MB/s enc, 311.9 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16b              216.4 MB/s enc, 312.3 MB/s dec	 94602182 bytes -> 43383127 bytes
+    r8x16b_avx2         174.9 MB/s enc, 314.6 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r16x16              175.2 MB/s enc, 399.2 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r16x16_avx2         172.3 MB/s enc, 311.8 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r16x16b             203.1 MB/s enc, 311.4 MB/s dec	 94602182 bytes -> 43385998 bytes
+    r16x16b_avx2        174.9 MB/s enc, 313.3 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r32x16              172.1 MB/s enc, 393.7 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r32x16_avx2         ERR
+    r32x16b             195.3 MB/s enc, 307.9 MB/s dec	 94602182 bytes -> 43391024 bytes
+    r32x16b_avx2        260.4 MB/s enc, 821.9 MB/s dec	 94602182 bytes -> 43391024 bytes
 
-    q8  order 0         512.3 MB/s enc, 1432.7 MB/s dec	 73124567 bytes -> 16853107 bytes
-    q40 order 0         505.3 MB/s enc, 1420.0 MB/s dec	 94602182 bytes -> 53696527 bytes
-    q8  order 1         244.4 MB/s enc, 1058.5 MB/s dec	 73124567 bytes -> 15862079 bytes
-    q40 order 1         231.9 MB/s enc, 872.2 MB/s dec	 94602182 bytes -> 43221095 bytes
+-----------------------------------------------------------------------------
+
+icc 15.0.0, q8 test file, order 0
+
+    arith_static        237.0 MB/s enc, 158.8 MB/s dec	 73124567 bytes -> 16852961 bytes
+    rANS_static4c       306.2 MB/s enc, 316.1 MB/s dec	 73124567 bytes -> 16850374 bytes
+    rANS_static4j       308.4 MB/s enc, 348.7 MB/s dec	 73124567 bytes -> 16847058 bytes
+    rANS_static4x16     380.5 MB/s enc, 637.8 MB/s dec	 73124567 bytes -> 16847245 bytes
+    rANS_static4x8      306.2 MB/s enc, 654.5 MB/s dec	 73124567 bytes -> 16847000 bytes
+    rANS_static64c      448.2 MB/s enc, 516.0 MB/s dec	 73124567 bytes -> 16851067 bytes
+    r4x16               336.5 MB/s enc, 302.2 MB/s dec	 73124567 bytes -> 16848349 bytes
+    r4x16b              380.6 MB/s enc, 241.9 MB/s dec	 73124567 bytes -> 16847245 bytes
+    r8x16               340.9 MB/s enc, 582.0 MB/s dec	 73124567 bytes -> 16850295 bytes
+    r8x16_avx2          340.6 MB/s enc, 579.5 MB/s dec	 73124567 bytes -> 16850295 bytes
+    r8x16_sse           339.4 MB/s enc, 565.9 MB/s dec	 73124567 bytes -> 16850295 bytes
+    r8x16b              374.3 MB/s enc, 520.2 MB/s dec	 73124567 bytes -> 16848087 bytes
+    r8x16b_avx2         348.7 MB/s enc, 580.5 MB/s dec	 73124567 bytes -> 16848087 bytes
+    r16x16              339.4 MB/s enc, 880.1 MB/s dec	 73124567 bytes -> 16854189 bytes
+    r16x16_avx2         339.8 MB/s enc, 962.8 MB/s dec	 73124567 bytes -> 16854189 bytes
+    r16x16b             355.8 MB/s enc, 514.3 MB/s dec	 73124567 bytes -> 16849773 bytes
+    r16x16b_avx2        348.0 MB/s enc, 973.0 MB/s dec	 73124567 bytes -> 16849773 bytes
+    r32x16              293.9 MB/s enc, 856.1 MB/s dec	 73124567 bytes -> 16861939 bytes
+    r32x16_avx2         293.8 MB/s enc, 917.8 MB/s dec	 73124567 bytes -> 16861939 bytes
+    r32x16b             356.4 MB/s enc, 516.2 MB/s dec	 73124567 bytes -> 16853107 bytes
+    r32x16b_avx2        432.8 MB/s enc, 1359.0 MB/s dec	 73124567 bytes -> 16853107 bytes
+    
+icc 15.0.0, q40 test file, order 0
+
+    arith_static        262.8 MB/s enc, 158.4 MB/s dec	 94602182 bytes -> 53713263 bytes
+    rANS_static4c       305.2 MB/s enc, 332.5 MB/s dec	 94602182 bytes -> 53694731 bytes
+    rANS_static4j       312.5 MB/s enc, 358.4 MB/s dec	 94602182 bytes -> 53690573 bytes
+    rANS_static4x16     309.6 MB/s enc, 627.5 MB/s dec	 94602182 bytes -> 53689007 bytes
+    rANS_static4x8      321.7 MB/s enc, 650.9 MB/s dec	 94602182 bytes -> 53688173 bytes
+    rANS_static64c      341.1 MB/s enc, 409.2 MB/s dec	 94602182 bytes -> 53695650 bytes
+    r4x16               275.6 MB/s enc, 300.5 MB/s dec	 94602182 bytes -> 53690447 bytes
+    r4x16b              375.5 MB/s enc, 239.0 MB/s dec	 94602182 bytes -> 53689007 bytes
+    r8x16               229.9 MB/s enc, 578.5 MB/s dec	 94602182 bytes -> 53692915 bytes
+    r8x16_avx2          230.3 MB/s enc, 579.5 MB/s dec	 94602182 bytes -> 53692915 bytes
+    r8x16_sse           233.1 MB/s enc, 564.7 MB/s dec	 94602182 bytes -> 53692915 bytes
+    r8x16b              370.0 MB/s enc, 509.3 MB/s dec	 94602182 bytes -> 53690035 bytes
+    r8x16b_avx2         237.1 MB/s enc, 581.2 MB/s dec	 94602182 bytes -> 53690035 bytes
+    r16x16              224.2 MB/s enc, 862.3 MB/s dec	 94602182 bytes -> 53697949 bytes
+    r16x16_avx2         224.3 MB/s enc, 963.5 MB/s dec	 94602182 bytes -> 53697949 bytes
+    r16x16b             351.4 MB/s enc, 512.3 MB/s dec	 94602182 bytes -> 53692189 bytes
+    r16x16b_avx2        229.4 MB/s enc, 947.5 MB/s dec	 94602182 bytes -> 53692189 bytes
+    r32x16              204.9 MB/s enc, 671.2 MB/s dec	 94602182 bytes -> 53708047 bytes
+    r32x16_avx2         205.5 MB/s enc, 733.1 MB/s dec	 94602182 bytes -> 53708047 bytes
+    r32x16b             352.6 MB/s enc, 514.7 MB/s dec	 94602182 bytes -> 53696527 bytes
+    r32x16b_avx2        432.8 MB/s enc, 1347.4 MB/s dec	 94602182 bytes -> 53696527 bytes
+
+
+icc 15.0.0, q8 test file, order 0
+
+    arith_static        180.8 MB/s enc, 133.5 MB/s dec	 73124567 bytes -> 15858338 bytes
+    rANS_static4c       185.9 MB/s enc, 266.3 MB/s dec	 73124567 bytes -> 15849499 bytes
+    rANS_static4j       194.9 MB/s enc, 297.8 MB/s dec	 73124567 bytes -> 15849499 bytes
+    rANS_static4x16     174.6 MB/s enc, 414.7 MB/s dec	 73124567 bytes -> 15866708 bytes
+    rANS_static4x8      197.2 MB/s enc, 379.1 MB/s dec	 73124567 bytes -> 15849499 bytes
+    rANS_static64c      172.8 MB/s enc, 368.9 MB/s dec	 73124567 bytes -> 15850232 bytes
+    r4x16               175.3 MB/s enc, 394.5 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r4x16b              243.2 MB/s enc, 215.9 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16               176.5 MB/s enc, 394.1 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16_avx2          176.2 MB/s enc, 410.4 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16_sse           229.0 MB/s enc, 415.6 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r8x16b              238.3 MB/s enc, 284.1 MB/s dec	 73124567 bytes -> 15867650 bytes
+    r8x16b_avx2         175.0 MB/s enc, 400.8 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r16x16              175.5 MB/s enc, 393.6 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r16x16_avx2         176.4 MB/s enc, 408.4 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r16x16b             233.2 MB/s enc, 311.6 MB/s dec	 73124567 bytes -> 15869416 bytes
+    r16x16b_avx2        176.9 MB/s enc, 412.5 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r32x16              174.7 MB/s enc, 393.8 MB/s dec	 73124567 bytes -> 15866708 bytes
+    r32x16_avx2         ERR
+    r32x16b             231.4 MB/s enc, 308.3 MB/s dec	 73124567 bytes -> 15872840 bytes
+    r32x16b_avx2        258.6 MB/s enc, 1060.8 MB/s dec	 73124567 bytes -> 15872840 bytes
+    
+icc 15.0.0, q40 test file, order 1
+
+    arith_static        124.3 MB/s enc, 101.6 MB/s dec	 94602182 bytes -> 43399150 bytes
+    rANS_static4c       145.5 MB/s enc, 213.5 MB/s dec	 94602182 bytes -> 43165948 bytes
+    rANS_static4j       155.2 MB/s enc, 238.5 MB/s dec	 94602182 bytes -> 43165948 bytes
+    rANS_static4x16     149.0 MB/s enc, 383.3 MB/s dec	 94602182 bytes -> 43381697 bytes
+    rANS_static4x8      156.7 MB/s enc, 328.9 MB/s dec	 94602182 bytes -> 43165948 bytes
+    rANS_static64c      154.6 MB/s enc, 290.0 MB/s dec	 94602182 bytes -> 43166873 bytes
+    r4x16               148.7 MB/s enc, 383.5 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r4x16b              236.2 MB/s enc, 185.3 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16               149.7 MB/s enc, 381.2 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16_avx2          149.5 MB/s enc, 309.0 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16_sse           178.0 MB/s enc, 311.8 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r8x16b              232.8 MB/s enc, 263.0 MB/s dec	 94602182 bytes -> 43383127 bytes
+    r8x16b_avx2         148.4 MB/s enc, 302.2 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r16x16              150.3 MB/s enc, 383.7 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r16x16_avx2         150.2 MB/s enc, 308.5 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r16x16b             223.5 MB/s enc, 294.4 MB/s dec	 94602182 bytes -> 43385998 bytes
+    r16x16b_avx2        149.8 MB/s enc, 307.9 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r32x16              147.7 MB/s enc, 382.8 MB/s dec	 94602182 bytes -> 43381697 bytes
+    r32x16_avx2         ERR
+    r32x16b             221.2 MB/s enc, 292.0 MB/s dec	 94602182 bytes -> 43391024 bytes
+    r32x16b_avx2        250.6 MB/s enc, 986.6 MB/s dec	 94602182 bytes -> 43391024 bytes
+
+-----------------------------------------------------------------------------

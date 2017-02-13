@@ -1470,7 +1470,10 @@ int main(int argc, char **argv) {
 	    in_sz += len;
 	}
 
-	int trials = 10;
+#ifndef NTRIALS
+#define NTRIALS 10
+#endif
+	int trials = NTRIALS;
 	while (trials--) {
 	    bc = malloc(nb*sizeof(*bc));
 	    bu = malloc(nb*sizeof(*bu));

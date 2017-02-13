@@ -9,8 +9,10 @@ progs_auto="r4x16 r8x16 r16x16 r32x16 r4x16b r8x16b r16x16b r32x16b"
 fn=${FN:-/var/tmp/q40}
 order=${ORDER:-0}
 
-for i in $progs $progs_old $progs_auto $progs_sse $progs_avx2 $progs_knl
+progs=`echo $progs $progs_old $progs_auto $progs_sse $progs_avx2 $progs_knl | tr ' ' '\012' | sort`
+
+for i in $progs
 do
     printf %-20s $i
-    ./$i -t -o$order $fn 2>&1 | tail -1
+    (for x in 1 2 3;do ./$i -t -o$order $fn 2>&1;done) | sort -n | tail -1
 done

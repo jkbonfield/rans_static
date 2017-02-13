@@ -1526,7 +1526,10 @@ int main(int argc, char **argv) {
 	    in_sz += len;
 	}
 
-	int trials = 10;
+#ifndef NTRIALS
+#define NTRIALS 10
+#endif
+	int trials = NTRIALS;
 	while (trials--) {
 	    // Warmup
 	    for (i = 0; i < nb; i++) memset(bc[i].blk, 0, bc[i].sz);
