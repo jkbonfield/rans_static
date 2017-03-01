@@ -454,3 +454,36 @@ icc 15.0.0, q40 test file, order 1
     r32x16b_avx2        250.6 MB/s enc, 986.6 MB/s dec	 94602182 bytes -> 43391024 bytes
 
 -----------------------------------------------------------------------------
+
+
+To do
+-----
+
+More work can be done as this is largely just experimental at present.
+
+- Tidy up the API. A lot of functions have inappropriate names, eg
+  r16x16_avx2 has a function rans_compress_O1_4x16(), due to starting
+  from the 4x16 interface.
+
+- Work out which TF_SHIFT_O1 is appropriate.  On low entropy data we
+  can get away with 9 or 10 as it's much faster, but on high entropy
+  data or with a large alphabet this is very suboptimal and we'd want
+  11 or so in order to compress well.
+
+- Move the frequency table code (counting, encoding, decoding) into a
+  file shared by all codecs.
+
+- Compress the frequency table. O1 table can be large, but is
+  trivially encoded itself using order-0 rans.  We should also permit
+  this table to be an argument to the functions so we can build a
+  table from a large data set and apply the same table to many smaller
+  data sets (permitting higher degree of random access without
+  incurring high costs of storing complex tables).
+
+- Order-1 table is also just an array of order-0 tables, but there is
+  often strong correlation between each of these tables which we
+  haven't exploited.  Eg.  maybe store the order-0 frequencies and
+  then a set of deltas against it?  Or rotate our table so we have
+  the same symbol with all order-1 frequencies against it (encode
+  with delta and order-1)?  Lots to explore.
+
