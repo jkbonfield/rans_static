@@ -29,6 +29,8 @@
 
 #include <x86intrin.h>
 
+#define NX 32
+
 /*-------------------------------------------------------------------------- */
 /* rans_byte.h from https://github.com/rygorous/ryg_rans */
 
@@ -36,10 +38,6 @@
 //
 // Not intended to be "industrial strength"; just meant to illustrate the general
 // idea.
-
-#ifndef NX
-#define NX 16
-#endif
 
 #ifndef RANS_BYTE_HEADER
 #define RANS_BYTE_HEADER
@@ -102,13 +100,13 @@ static inline void RansEncInit(RansState* r)
 // Renormalize the encoder. Internal function.
 static inline RansState RansEncRenorm(RansState x, uint8_t** pptr, uint32_t freq, uint32_t scale_bits)
 {
-    uint32_t x_max = ((RANS_BYTE_L >> scale_bits) << 8) * freq; // this turns into a shift.
-    if (x >= x_max) {
+    uint32_t x_max = ((RANS_BYTE_L >> scale_bits) << 8) * freq -1; // this turns into a shift.
+    if (x > x_max) {
         uint8_t* ptr = *pptr;
         do {
             *--ptr = (uint8_t) (x & 0xff);
             x >>= 8;
-        } while (x >= x_max);
+        } while (x > x_max);
         *pptr = ptr;
     }
     return x;
@@ -201,11 +199,10 @@ typedef struct {
     uint32_t x_max;     // (Exclusive) upper bound of pre-normalization interval
     uint32_t rcp_freq;  // Fixed-point reciprocal frequency
     uint32_t bias;      // Bias
+
     uint16_t cmpl_freq; // Complement of frequency: (1 << scale_bits) - freq
     uint16_t rcp_shift; // Reciprocal shift
 
-    // FIXME: temporary
-    uint16_t scale_bits;
     uint16_t freq;
     uint16_t start;
 } RansEncSymbol;
@@ -239,13 +236,13 @@ static inline void RansEncSymbolInit(RansEncSymbol* s, uint32_t start, uint32_t 
     // and we can just precompute cmpl_freq. Now we just need to
     // set up our parameters such that the original encoder and
     // the fast encoder agree.
-    
-    // FIXME: temporary
-    s->scale_bits = scale_bits;
+#ifdef FP_DIV
+    //s->scale_bits = scale_bits;
     s->freq = freq;
     s->start = start;
+#endif
 
-    s->x_max = ((RANS_BYTE_L >> scale_bits) << 16) * freq;
+    s->x_max = ((RANS_BYTE_L >> scale_bits) << 16) * freq -1;
     s->cmpl_freq = (uint16_t) ((1 << scale_bits) - freq);
     if (freq < 2) {
         // freq=0 symbols are never valid to encode, so it doesn't matter what
@@ -316,7 +313,7 @@ static inline void RansEncPutSymbol(RansState* r, uint8_t** pptr, RansEncSymbol 
     uint32_t x = *r;
     uint32_t x_max = sym->x_max;
 
-    if (x >= x_max) {
+    if (x > x_max) {
 	uint16_t* ptr = *(uint16_t **)pptr;
 	*--ptr = (uint16_t) (x & 0xffff);
 	x >>= 16;
@@ -430,12 +427,17 @@ static inline void RansDecRenorm(RansState* r, uint8_t** pptr)
 #include <string.h>
 #include <sys/time.h>
 #include "r16N.h"
+#include "permute.h"
 
-#define TF_SHIFT 12
+#ifndef TF_SHIFT
+#  define TF_SHIFT 12
+#endif
 #define TOTFREQ (1<<TF_SHIFT)
 
-// 9 is considerably faster in the O1sfb variant due to reduced table size.
-#define TF_SHIFT_O1 9
+// 9 is considerably faster on some data sets due to reduced table size.
+#ifndef TF_SHIFT_O1
+#  define TF_SHIFT_O1 9
+#endif
 #define TOTFREQ_O1 (1<<TF_SHIFT_O1)
 
 
@@ -477,17 +479,23 @@ static void hist4p(unsigned char *in, unsigned int in_size, int *F0) {
 static void hist8(unsigned char *in, unsigned int in_size, int F0[256]) {
     int F1[256+MAGIC] = {0}, F2[256+MAGIC] = {0}, F3[256+MAGIC] = {0};
     int F4[256+MAGIC] = {0}, F5[256+MAGIC] = {0}, F6[256+MAGIC] = {0}, F7[256+MAGIC] = {0};
-    int i, i8 = in_size & ~7;
-    for (i = 0; i < i8; i+=8) {
-	F0[in[i+0]]++;
-	F1[in[i+1]]++;
-	F2[in[i+2]]++;
-	F3[in[i+3]]++;
-	F4[in[i+4]]++;
-	F5[in[i+5]]++;
-	F6[in[i+6]]++;
-	F7[in[i+7]]++;
+    int i, i4 = ((in_size-4) & ~7)/4; // permits vnext
+    uint32_t *in4 = (uint32_t *)in;
+    uint32_t vnext = i4 ? in4[0] : 0;
+    for (i = 0; i < i4; i+=2) {
+	uint32_t v = vnext; vnext = in4[i+1];
+	F0[(unsigned char)(v>> 0)]++;
+	F1[(unsigned char)(v>> 8)]++;
+	F2[(unsigned char)(v>>16)]++;
+	F3[(unsigned char)(v>>24)]++;
+	v = vnext; vnext = in4[i+2];
+	F4[(unsigned char)(v>> 0)]++;
+	F5[(unsigned char)(v>> 8)]++;
+	F6[(unsigned char)(v>>16)]++;
+	F7[(unsigned char)(v>>24)]++;
     }
+
+    i *= 4;
     while (i < in_size)
 	F0[in[i++]]++;
 
@@ -495,23 +503,133 @@ static void hist8(unsigned char *in, unsigned int in_size, int F0[256]) {
 	F0[i] += F1[i] + F2[i] + F3[i] + F4[i] + F5[i] + F6[i] + F7[i];
 }
 
-unsigned int rans_compress_bound_4x16(unsigned int size, int order, int *tab) {
+unsigned int rans_compress_bound_32x16(unsigned int size, int order, int *tab) {
   int tabsz = order == 0
     ?     257*3 + 4 + NX*4 + NX*4
     : 257*257*3 + 4 + NX*4 + NX*4;
   if (tab) *tab = tabsz;
-  return 1.05*size + tabsz;
+  return 1.05*size + NX*4 + tabsz;
 }
 
-unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
-				     unsigned char *out, unsigned int *out_size) {
+// _mm256__mul_epu32 is:
+//  -b -d -f -h
+//* -q -s -u -w
+//= BQ DS FU HW where BQ=b*q etc
+//
+// We want
+//  abcd efgh  (a)
+// *pqrs tuvw  (b)
+// =ABCD EFGH
+//
+// a    mul b      => BQ DS FU HW
+// >>= 8           => -B QD SF UH
+// &               => -B -D -F -H (1)
+// a>>8 mul b>>8   => AP CR ET GV
+// &               => A- C- E- G-
+// | with (1)      => AB CD EF GH
+#if 0
+static __m256i _mm256_mulhi_epu32(__m256i a, __m256i b) {
+    __m256i ab_lm = _mm256_mul_epu32(a, b);
+    ab_lm = _mm256_srli_epi64(ab_lm, 32);
+    a = _mm256_srli_epi64(a, 32);
+
+    ab_lm = _mm256_and_si256(ab_lm, _mm256_set1_epi64x(0xffffffff));
+    b = _mm256_srli_epi64(b, 32);
+
+    __m256i ab_hm = _mm256_mul_epu32(a, b);
+    ab_hm = _mm256_and_si256(ab_hm, _mm256_set1_epi64x((uint64_t)0xffffffff00000000)); 
+    ab_hm = _mm256_or_si256(ab_hm, ab_lm);
+
+    return ab_hm;
+}
+#else
+static __m256i _mm256_mulhi_epu32(__m256i a, __m256i b) {
+    // Multiply bottom 4 items and top 4 items together.
+    __m256i ab_hm = _mm256_mul_epu32(_mm256_srli_epi64(a, 32), _mm256_srli_epi64(b, 32));
+    __m256i ab_lm = _mm256_srli_epi64(_mm256_mul_epu32(a, b), 32);
+
+    // Shift to get hi 32-bit of each 64-bit product
+    ab_hm = _mm256_and_si256(ab_hm, _mm256_set1_epi64x((uint64_t)0xffffffff00000000));
+
+    return _mm256_or_si256(ab_lm, ab_hm);
+}
+#endif
+
+// Exists on KNC, but sadly not general AVX512
+#if 0
+static __m512i _mm512_mulhi_epu32(__m512i a, __m512i b) {
+    __m512i ab_lm = _mm512_mul_epu32(a, b);
+    ab_lm = _mm512_srli_epi64(ab_lm, 32);
+    a = _mm512_srli_epi64(a, 32);
+
+    ab_lm = _mm512_and_si512(ab_lm, _mm512_set1_epi64(0xffffffff));
+    b = _mm512_srli_epi64(b, 32);
+
+    __m512i ab_hm = _mm512_mul_epu32(a, b);
+    ab_hm = _mm512_and_si512(ab_hm, _mm512_set1_epi64((uint64_t)0xffffffff00000000)); 
+    ab_hm = _mm512_or_si512(ab_hm, ab_lm);
+
+    return ab_hm;
+}
+#else
+static __m512i _mm512_mulhi_epu32(__m512i a, __m512i b) {
+    // Multiply bottom 4 items and top 4 items together.
+    __m512i ab_hm = _mm512_mul_epu32(_mm512_srli_epi64(a, 32), _mm512_srli_epi64(b, 32));
+    __m512i ab_lm = _mm512_srli_epi64(_mm512_mul_epu32(a, b), 32);
+
+    // Shift to get hi 32-bit of each 64-bit product
+    ab_hm = _mm512_and_si512(ab_hm, _mm512_set1_epi64((uint64_t)0xffffffff00000000));
+
+    return _mm512_or_si512(ab_lm, ab_hm);
+}
+#endif
+#if 0
+__m256i _mm256_div_epi32(__m256i a, __m256i b) {
+    return _mm256_cvttps_epi32(_mm256_div_ps(_mm256_cvtepi32_ps(a),
+					    _mm256_cvtepi32_ps(b)));
+}
+#else
+__m256i _mm256_div_epi32(__m256i a, __m256i b) {
+    __m256d a1  = _mm256_cvtepi32_pd(_mm256_extracti128_si256(a, 0));
+    __m256d b1  = _mm256_cvtepi32_pd(_mm256_extracti128_si256(b, 0));
+    __m128i ab1 = _mm256_cvttpd_epi32(_mm256_div_pd(a1, b1));
+
+    __m256d a2  = _mm256_cvtepi32_pd(_mm256_extracti128_si256(a, 1));
+    __m256d b2  = _mm256_cvtepi32_pd(_mm256_extracti128_si256(b, 1));
+    __m128i ab2 = _mm256_cvttpd_epi32(_mm256_div_pd(a2, b2));
+
+    return _mm256_inserti128_si256(_mm256_castsi128_si256(ab1), ab2, 1);
+}
+
+// Sadly no faster than above.  Marginal gain on gcc, slight loss on icc
+__m256i _mm256_div_epi32_avx512(__m256i a, __m256i b) {
+    // convert 32-bit int to 64-bit float (256 bit to 512 bit),
+    // 64-bit fp division, and then convert back to 32-bit int.
+    return _mm512_cvttpd_epi32(_mm512_div_pd(_mm512_cvtepi32_pd(a), _mm512_cvtepi32_pd(b)));
+}
+#endif
+
+#if 1
+// Simulated gather.  This is sometimes faster as it can run on other ports.
+static inline __m256i _mm256_i32gather_epi32x(int *b, __m256i idx, int size) {
+    int c[8] __attribute__((aligned(32)));
+    _mm256_store_si256((__m256i *)c, idx);
+    return _mm256_set_epi32(b[c[7]], b[c[6]], b[c[5]], b[c[4]], b[c[3]], b[c[2]], b[c[1]], b[c[0]]);
+}
+#else
+#define _mm256_i32gather_epi32x _mm256_i32gather_epi32
+#endif
+
+// Non avx2 version
+unsigned char *rans_compress_O0_32x16_basic(unsigned char *in, unsigned int in_size,
+					    unsigned char *out, unsigned int *out_size) {
   unsigned char *cp, *out_end;
     RansEncSymbol syms[256];
     RansState ransN[NX];
     uint8_t* ptr;
     int F[256+MAGIC] = {0}, i, j, tab_size, rle, x, fsum = 0;
     int m = 0, M = 0;
-    int bound = rans_compress_bound_4x16(in_size,0, NULL), z;
+    int bound = rans_compress_bound_32x16(in_size,0, NULL), z;
 
     if (!out) {
 	*out_size = bound;
@@ -630,11 +748,663 @@ unsigned char *rans_compress_O0_4x16(unsigned char *in, unsigned int in_size,
     return out;
 }
 
+unsigned char *rans_compress_O0_32x16_avx2(unsigned char *in, unsigned int in_size,
+					   unsigned char *out, unsigned int *out_size) {
+    unsigned char *cp, *out_end;
+    RansEncSymbol syms[256];
+    RansState ransN[NX] __attribute__((aligned(32)));
+    uint8_t* ptr;
+    int F[256+MAGIC] = {0}, i, j, tab_size, rle, x, fsum = 0;
+    int m = 0, M = 0;
+    int tabsz;
+    int bound = rans_compress_bound_32x16(in_size,0,&tabsz), z;
+
+    //uint64_t sym_mf[256], sym_bfs[256];
+    //uint32_t SD[256], SC[256], SB[256], SA[256];
+    uint32_t SB[256], SA[256], SD[256], SC[256];
+#ifdef FP_DIV
+    uint32_t FS[256];
+#endif
+
+    if (!out) {
+	*out_size = bound;
+	out = malloc(*out_size);
+    }
+    if (!out || bound > *out_size) {
+	return NULL;
+    }
+
+    ptr = out_end = out + bound;
+
+    // Compute statistics
+    hist8(in, in_size, F);
+    double p = (double)TOTFREQ/(double)in_size;
+
+    // Normalise so T[i] == TOTFREQ
+    for (m = M = j = 0; j < 256; j++) {
+	if (!F[j])
+	    continue;
+
+	if (m < F[j])
+	    m = F[j], M = j;
+
+	if ((F[j] = F[j]*p+0.499) == 0)
+	    F[j] = 1;
+	fsum += F[j];
+    }
+
+    fsum++; // not needed, but can't remove without removing assert x<TOTFREQ (in old code)
+    int adjust = TOTFREQ - fsum;
+    if (adjust > 0) {
+	F[M] += adjust;
+    } else if (adjust < 0) {
+	if (F[M] > -adjust) {
+	    F[M] += adjust;
+	} else {
+	    adjust += F[M]-1;
+	    F[M] = 1;
+	    for (j = 0; adjust && j < 256; j++) {
+		if (F[j] < 2) continue;
+
+		int d = F[j] > -adjust;
+		int m = d ? adjust : 1-F[j];
+		F[j]   += m;
+		adjust -= m;
+	    }
+	}
+    }
+
+    //printf("F[%d]=%d\n", M, F[M]);
+    assert(F[M]>0);
+
+    // Encode statistics.
+    cp = out+4;
+
+    for (x = rle = j = 0; j < 256; j++) {
+	if (F[j]) {
+	    // j
+	    if (rle) {
+		rle--;
+	    } else {
+		*cp++ = j;
+		if (!rle && j && F[j-1])  {
+		    for(rle=j+1; rle<256 && F[rle]; rle++)
+			;
+		    rle -= j+1;
+		    *cp++ = rle;
+		}
+		//fprintf(stderr, "%d: %d %d\n", j, rle, N[j]);
+	    }
+	    
+	    // F[j]
+	    if (F[j]<128) {
+		*cp++ = F[j];
+	    } else {
+		*cp++ = 128 | (F[j]>>8);
+		*cp++ = F[j]&0xff;
+	    }
+	    RansEncSymbolInit(&syms[j], x, F[j], TF_SHIFT);
+	    //SB[j] = syms[j].x_max;
+	    //SA[i] = syms[j].rcp_freq;
+	    //SD[i] = (syms[j].cmpl_freq<<0) | (syms[j].rcp_shift<<16);
+	    //SC[i] = syms[j].bias;
+	    x += F[j];
+	}
+    }
+    *cp++ = 0;
+
+    //write(2, out+4, cp-(out+4));
+    tab_size = cp-out;
+
+    for (z = 0; z < NX; z++)
+      RansEncInit(&ransN[z]);
+
+    z = i = in_size&(NX-1);
+    while (z-- > 0)
+      RansEncPutSymbol(&ransN[z], &ptr, &syms[in[in_size-(i-z)]]);
+
+    for (i = 0; i < 256; i++) {
+	//sym_mf[i] = syms[i].rcp_freq | (((uint64_t)syms[i].x_max)<<32);
+#ifdef FP_DIV
+	SB[i] = syms[i].x_max;
+	FS[i] = (syms[i].freq) | (syms[i].start << 16);
+#else
+	SB[i] = syms[i].x_max;
+	SA[i] = syms[i].rcp_freq;
+	SD[i] = (syms[i].cmpl_freq<<0) | ((syms[i].rcp_shift-32)<<16);
+	SC[i] = syms[i].bias;
+#endif
+    }
+
+    uint16_t *ptr16 = (uint16_t *)ptr;
+
+#define LOAD1(a,b) __m256i a##1 = _mm256_load_si256((__m256i *)&b[0]);
+#define LOAD2(a,b) __m256i a##2 = _mm256_load_si256((__m256i *)&b[8]);
+#define LOAD3(a,b) __m256i a##3 = _mm256_load_si256((__m256i *)&b[16]);
+#define LOAD4(a,b) __m256i a##4 = _mm256_load_si256((__m256i *)&b[24]);
+#define LOAD(a,b) LOAD1(a,b);LOAD2(a,b);LOAD3(a,b);LOAD4(a,b)
+
+#define STORE1(a,b) _mm256_store_si256((__m256i *)&b[0],  a##1);
+#define STORE2(a,b) _mm256_store_si256((__m256i *)&b[8],  a##2);
+#define STORE3(a,b) _mm256_store_si256((__m256i *)&b[16], a##3);
+#define STORE4(a,b) _mm256_store_si256((__m256i *)&b[24], a##4);
+#define STORE(a,b) STORE1(a,b);STORE2(a,b);STORE3(a,b);STORE4(a,b)
+
+    LOAD(Rv, ransN);
+
+    for (i=(in_size &~(NX-1)); i>0; i-=NX) {
+	uint8_t *c = &in[i-32];
+
+// Set vs gather methods of loading data.
+// Gather is faster, but can only schedule a few to run in parallel.
+#define SET1(a,b) __m256i a##1 = _mm256_set_epi32(b[c[ 7]], b[c[ 6]], b[c[ 5]], b[c[ 4]], b[c[ 3]], b[c[ 2]], b[c[ 1]], b[c[ 0]])
+#define SET2(a,b) __m256i a##2 = _mm256_set_epi32(b[c[15]], b[c[14]], b[c[13]], b[c[12]], b[c[11]], b[c[10]], b[c[ 9]], b[c[ 8]])
+#define SET3(a,b) __m256i a##3 = _mm256_set_epi32(b[c[23]], b[c[22]], b[c[21]], b[c[20]], b[c[19]], b[c[18]], b[c[17]], b[c[16]])
+#define SET4(a,b) __m256i a##4 = _mm256_set_epi32(b[c[31]], b[c[30]], b[c[29]], b[c[28]], b[c[27]], b[c[26]], b[c[25]], b[c[24]])
+#define SET(a,b) SET1(a,b);SET2(a,b);SET3(a,b);SET4(a,b)
+
+	// Renorm:
+	// if (x > x_max) {*--ptr16 = x & 0xffff; x >>= 16;}
+	SET(xmax, SB);
+	__m256i cv1 = _mm256_cmpgt_epi32(Rv1, xmax1);
+	__m256i cv2 = _mm256_cmpgt_epi32(Rv2, xmax2);
+	__m256i cv3 = _mm256_cmpgt_epi32(Rv3, xmax3);
+	__m256i cv4 = _mm256_cmpgt_epi32(Rv4, xmax4);
+
+	// Store bottom 16-bits at ptr16
+	unsigned int imask1 = _mm256_movemask_ps((__m256)cv1);
+	unsigned int imask2 = _mm256_movemask_ps((__m256)cv2);
+	unsigned int imask3 = _mm256_movemask_ps((__m256)cv3);
+	unsigned int imask4 = _mm256_movemask_ps((__m256)cv4);
+
+	__m256i idx1 = _mm256_load_si256((const __m256i*)permutec[imask1]);
+	__m256i idx2 = _mm256_load_si256((const __m256i*)permutec[imask2]);
+	__m256i idx3 = _mm256_load_si256((const __m256i*)permutec[imask3]);
+	__m256i idx4 = _mm256_load_si256((const __m256i*)permutec[imask4]);
+
+	// Permute; to gather together the rans states that need flushing
+	__m256i V1 = _mm256_permutevar8x32_epi32(_mm256_and_si256(Rv1, cv1), idx1);
+	__m256i V2 = _mm256_permutevar8x32_epi32(_mm256_and_si256(Rv2, cv2), idx2);
+	__m256i V3 = _mm256_permutevar8x32_epi32(_mm256_and_si256(Rv3, cv3), idx3);
+	__m256i V4 = _mm256_permutevar8x32_epi32(_mm256_and_si256(Rv4, cv4), idx4);
+
+	// We only flush bottom 16 bits, to squash 32-bit states into 16 bit.
+	V1 = _mm256_and_si256(V1, _mm256_set1_epi32(0xffff));
+	V2 = _mm256_and_si256(V2, _mm256_set1_epi32(0xffff));
+	V3 = _mm256_and_si256(V3, _mm256_set1_epi32(0xffff));
+	V4 = _mm256_and_si256(V4, _mm256_set1_epi32(0xffff));
+	__m256i V12 = _mm256_packus_epi32(V1, V2);
+	__m256i V34 = _mm256_packus_epi32(V3, V4);
+
+	// It's BAba order, want BbAa so shuffle.
+	V12 = _mm256_permute4x64_epi64(V12, 0xd8);
+	V34 = _mm256_permute4x64_epi64(V34, 0xd8);
+
+	// Now we have bottom N 16-bit values in each V12/V34 to flush
+	__m128i f =  _mm256_extractf128_si256(V34, 1);
+	_mm_storeu_si128((__m128i *)(ptr16-8), f);
+	ptr16 -= _mm_popcnt_u32(imask4);
+
+	f =  _mm256_extractf128_si256(V34, 0);
+	_mm_storeu_si128((__m128i *)(ptr16-8), f);
+	ptr16 -= _mm_popcnt_u32(imask3);
+
+	f =  _mm256_extractf128_si256(V12, 1);
+	_mm_storeu_si128((__m128i *)(ptr16-8), f);
+	ptr16 -= _mm_popcnt_u32(imask2);
+
+	f =  _mm256_extractf128_si256(V12, 0);
+	_mm_storeu_si128((__m128i *)(ptr16-8), f);
+	ptr16 -= _mm_popcnt_u32(imask1);
+
+	__m256i Rs;
+	Rs = _mm256_srli_epi32(Rv1, 16); Rv1 = _mm256_blendv_epi8(Rv1, Rs, cv1);
+	Rs = _mm256_srli_epi32(Rv2, 16); Rv2 = _mm256_blendv_epi8(Rv2, Rs, cv2);
+	Rs = _mm256_srli_epi32(Rv3, 16); Rv3 = _mm256_blendv_epi8(Rv3, Rs, cv3);
+	Rs = _mm256_srli_epi32(Rv4, 16); Rv4 = _mm256_blendv_epi8(Rv4, Rs, cv4);
+
+	// Cannot trivially replace the multiply as mulhi_epu32 doesn't exist (only mullo).
+	// However we can use _mm256_mul_epu32 twice to get 64bit results (half our lanes)
+	// and shift/or to get the answer.
+	//
+	// (AVX512 allows us to hold it all in 64-bit lanes and use mullo_epi64
+	// plus a shift.  KNC has mulhi_epi32, but not sure if this is available.)
+
+#ifndef FP_DIV
+	SET(rfv,   SA);
+
+	rfv1 = _mm256_mulhi_epu32(Rv1, rfv1);
+	rfv2 = _mm256_mulhi_epu32(Rv2, rfv2);
+	rfv3 = _mm256_mulhi_epu32(Rv3, rfv3);
+	rfv4 = _mm256_mulhi_epu32(Rv4, rfv4);
+
+	SET(SDv,   SD);
+
+	__m256i shiftv1 = _mm256_srli_epi32(SDv1, 16);
+	__m256i shiftv2 = _mm256_srli_epi32(SDv2, 16);
+	__m256i shiftv3 = _mm256_srli_epi32(SDv3, 16);
+	__m256i shiftv4 = _mm256_srli_epi32(SDv4, 16);
+
+	//shiftv1 = _mm256_sub_epi32(shiftv1, _mm256_set1_epi32(32));
+	//shiftv2 = _mm256_sub_epi32(shiftv2, _mm256_set1_epi32(32));
+	//shiftv3 = _mm256_sub_epi32(shiftv3, _mm256_set1_epi32(32));
+	//shiftv4 = _mm256_sub_epi32(shiftv4, _mm256_set1_epi32(32));
+
+	__m256i qv1 = _mm256_srlv_epi32(rfv1, shiftv1);
+	__m256i qv2 = _mm256_srlv_epi32(rfv2, shiftv2);
+
+	__m256i freqv1 = _mm256_and_si256(SDv1, _mm256_set1_epi32(0xffff));
+	__m256i freqv2 = _mm256_and_si256(SDv2, _mm256_set1_epi32(0xffff));
+	qv1 = _mm256_mullo_epi32(qv1, freqv1);
+	qv2 = _mm256_mullo_epi32(qv2, freqv2);
+
+	__m256i qv3 = _mm256_srlv_epi32(rfv3, shiftv3);
+	__m256i qv4 = _mm256_srlv_epi32(rfv4, shiftv4);
+
+	__m256i freqv3 = _mm256_and_si256(SDv3, _mm256_set1_epi32(0xffff));
+	__m256i freqv4 = _mm256_and_si256(SDv4, _mm256_set1_epi32(0xffff));
+	qv3 = _mm256_mullo_epi32(qv3, freqv3);
+	qv4 = _mm256_mullo_epi32(qv4, freqv4);
+
+	SET(biasv, SC);
+
+	qv1 = _mm256_add_epi32(qv1, biasv1);
+	qv2 = _mm256_add_epi32(qv2, biasv2);
+	qv3 = _mm256_add_epi32(qv3, biasv3);
+	qv4 = _mm256_add_epi32(qv4, biasv4);
+
+	Rv1 = _mm256_add_epi32(Rv1, qv1);
+	Rv2 = _mm256_add_epi32(Rv2, qv2);
+	Rv3 = _mm256_add_epi32(Rv3, qv3);
+	Rv4 = _mm256_add_epi32(Rv4, qv4);
+#else
+	// slow method:
+	// *r = ((x / sym->freq) << sym->scale_bits) + (x % sym->freq) + sym->start;
+	
+	// xdiv = x/freq;
+	// xmod = x - xd * f;
+	// R = xdiv << TF_SHIFT;
+	// R += xmod;
+	// R += start;
+
+	SET(FSv,  FS);
+
+	__m256i Fv1 = _mm256_and_si256(FSv1, _mm256_set1_epi32(0xffff));
+	__m256i Fv2 = _mm256_and_si256(FSv2, _mm256_set1_epi32(0xffff));
+	__m256i Fv3 = _mm256_and_si256(FSv3, _mm256_set1_epi32(0xffff));
+	__m256i Fv4 = _mm256_and_si256(FSv4, _mm256_set1_epi32(0xffff));
+
+	__m256i Sv1 = _mm256_srli_epi32(FSv1, 16);
+	__m256i Sv2 = _mm256_srli_epi32(FSv2, 16);
+	__m256i Sv3 = _mm256_srli_epi32(FSv3, 16);
+	__m256i Sv4 = _mm256_srli_epi32(FSv4, 16);
+
+	__m256i Rdiv1 = _mm256_div_epi32(Rv1, Fv1);
+	__m256i Rdiv2 = _mm256_div_epi32(Rv2, Fv2);
+	__m256i Rdiv3 = _mm256_div_epi32(Rv3, Fv3);
+	__m256i Rdiv4 = _mm256_div_epi32(Rv4, Fv4);
+	
+	__m256i Rmod1 = _mm256_sub_epi32(Rv1, _mm256_mullo_epi32(Rdiv1, Fv1));
+	__m256i Rmod2 = _mm256_sub_epi32(Rv2, _mm256_mullo_epi32(Rdiv2, Fv2));
+	__m256i Rmod3 = _mm256_sub_epi32(Rv3, _mm256_mullo_epi32(Rdiv3, Fv3));
+	__m256i Rmod4 = _mm256_sub_epi32(Rv4, _mm256_mullo_epi32(Rdiv4, Fv4));
+
+	Rv1 = _mm256_slli_epi32(Rdiv1, TF_SHIFT);
+	Rv2 = _mm256_slli_epi32(Rdiv2, TF_SHIFT);
+	Rv3 = _mm256_slli_epi32(Rdiv3, TF_SHIFT);
+	Rv4 = _mm256_slli_epi32(Rdiv4, TF_SHIFT);
+
+	Rv1 = _mm256_add_epi32(Rv1, Rmod1);
+	Rv2 = _mm256_add_epi32(Rv2, Rmod2);
+	Rv3 = _mm256_add_epi32(Rv3, Rmod3);
+	Rv4 = _mm256_add_epi32(Rv4, Rmod4);
+
+	Rv1 = _mm256_add_epi32(Rv1, Sv1);
+	Rv2 = _mm256_add_epi32(Rv2, Sv2);
+	Rv3 = _mm256_add_epi32(Rv3, Sv3);
+	Rv4 = _mm256_add_epi32(Rv4, Sv4);
+#endif
+    }
+
+    STORE(Rv, ransN);
+
+    ptr = (uint8_t *)ptr16;
+
+    for (z = NX-1; z >= 0; z--)
+      RansEncFlush(&ransN[z], &ptr);
+
+    // Finalise block size and return it
+    *out_size = (out_end - ptr) + tab_size;
+
+    cp = out;
+    *cp++ = (in_size>> 0) & 0xff;
+    *cp++ = (in_size>> 8) & 0xff;
+    *cp++ = (in_size>>16) & 0xff;
+    *cp++ = (in_size>>24) & 0xff;
+
+    memmove(out + tab_size, ptr, out_end-ptr);
+
+    return out;
+}
+
+unsigned char *rans_compress_O0_32x16(unsigned char *in, unsigned int in_size,
+				      unsigned char *out, unsigned int *out_size) {
+    unsigned char *cp, *out_end;
+    RansEncSymbol syms[256];
+    RansState ransN[NX];
+    uint8_t* ptr;
+    int F[256+MAGIC] = {0}, i, j, tab_size, rle, x, fsum = 0;
+    int m = 0, M = 0;
+    int bound = rans_compress_bound_32x16(in_size,0, NULL), z;
+
+    if (!out) {
+	*out_size = bound;
+	out = malloc(*out_size);
+    }
+    if (!out || bound > *out_size) {
+	return NULL;
+    }
+
+    ptr = out_end = out + bound;
+
+    // Compute statistics
+    hist8(in, in_size, F);
+    double p = (double)TOTFREQ/(double)in_size;
+
+    // Normalise so T[i] == TOTFREQ
+    for (m = M = j = 0; j < 256; j++) {
+	if (!F[j])
+	    continue;
+
+	if (m < F[j])
+	    m = F[j], M = j;
+
+	if ((F[j] = F[j]*p+0.499) == 0)
+	    F[j] = 1;
+	fsum += F[j];
+    }
+
+    fsum++; // not needed, but can't remove without removing assert x<TOTFREQ (in old code)
+    int adjust = TOTFREQ - fsum;
+    if (adjust > 0) {
+	F[M] += adjust;
+    } else if (adjust < 0) {
+	if (F[M] > -adjust) {
+	    F[M] += adjust;
+	} else {
+	    adjust += F[M]-1;
+	    F[M] = 1;
+	    for (j = 0; adjust && j < 256; j++) {
+		if (F[j] < 2) continue;
+
+		int d = F[j] > -adjust;
+		int m = d ? adjust : 1-F[j];
+		F[j]   += m;
+		adjust -= m;
+	    }
+	}
+    }
+
+    //printf("F[%d]=%d\n", M, F[M]);
+    assert(F[M]>0);
+
+    // Encode statistics.
+    cp = out+4;
+
+    for (x = rle = j = 0; j < 256; j++) {
+	if (F[j]) {
+	    // j
+	    if (rle) {
+		rle--;
+	    } else {
+		*cp++ = j;
+		if (!rle && j && F[j-1])  {
+		    for(rle=j+1; rle<256 && F[rle]; rle++)
+			;
+		    rle -= j+1;
+		    *cp++ = rle;
+		}
+		//fprintf(stderr, "%d: %d %d\n", j, rle, N[j]);
+	    }
+	    
+	    // F[j]
+	    if (F[j]<128) {
+		*cp++ = F[j];
+	    } else {
+		*cp++ = 128 | (F[j]>>8);
+		*cp++ = F[j]&0xff;
+	    }
+	    RansEncSymbolInit(&syms[j], x, F[j], TF_SHIFT);
+	    x += F[j];
+	}
+    }
+    *cp++ = 0;
+
+    //write(2, out+4, cp-(out+4));
+    tab_size = cp-out;
+
+    for (z = 0; z < NX; z++)
+      RansEncInit(&ransN[z]);
+
+    z = i = in_size&(NX-1);
+    while (z-- > 0)
+      RansEncPutSymbol(&ransN[z], &ptr, &syms[in[in_size-(i-z)]]);
+
+    uint32_t SB[256], SA[256], SD[256], SC[256];
+    uint32_t SDa[256], SDb[256];
+    for (i = 0; i < 256; i++) {
+	SB[i] = syms[i].x_max;
+	SA[i] = syms[i].rcp_freq;
+	SD[i] = (syms[i].cmpl_freq<<0) | ((syms[i].rcp_shift-32)<<16);
+	SC[i] = syms[i].bias;
+    }
+
+#define LOAD512(a,b)					 \
+    __m512i a##1 = _mm512_load_si512((__m512i *)&b[0]); \
+    __m512i a##2 = _mm512_load_si512((__m512i *)&b[16]);
+
+#define STORE512(a,b)				\
+    _mm512_store_si512((__m256i *)&b[0], a##1); \
+    _mm512_store_si512((__m256i *)&b[16], a##2);
+
+    LOAD512(Rv, ransN);
+
+    uint16_t *ptr16 = (uint16_t *)ptr;
+    for (i=(in_size &~(32-1)); i>0; i-=32) {
+	uint8_t *c = &in[i-32];
+
+//#define SETx(a,b) __m512i a##1 = _mm512_set_epi32(b[c[15]], b[c[14]], b[c[13]], b[c[12]], b[c[11]], b[c[10]], b[c[ 9]], b[c[ 8]], b[c[ 7]], b[c[ 6]], b[c[ 5]], b[c[ 4]], b[c[ 3]], b[c[ 2]], b[c[ 1]], b[c[ 0]])
+//#define SETy(a,b) __m512i a##2 = _mm512_set_epi32(b[c[31]], b[c[30]], b[c[29]], b[c[28]], b[c[27]], b[c[26]], b[c[25]], b[c[24]], b[c[23]], b[c[22]], b[c[21]], b[c[20]], b[c[19]], b[c[18]], b[c[17]], b[c[16]])
+//#define SET512x(a,b) SETx(a,b);SETy(a,b)
+
+
+	// GATHER versions
+	// Much faster now we have an efficient loadu mechanism in place, BUT...
+	// Try this for avx2 variant too?  Better way to populate the mm256 regs
+	// for mix of avx2 and avx512 opcodes.
+	__m256i c12 = _mm256_loadu_si256((__m256i const *)c);
+	__m512i c1 = _mm512_cvtepu8_epi32(_mm256_extracti128_si256(c12,0));
+	__m512i c2 = _mm512_cvtepu8_epi32(_mm256_extracti128_si256(c12,1));
+#define GAT512(a,b) __m512i a##1 = _mm512_i32gather_epi32(c1, b, 4); __m512i a##2 = _mm512_i32gather_epi32(c2, b, 4)
+#define SET512 GAT512
+
+#if 1
+	// Manually reordered implementation of the code in the #else clause
+	SET512(xmax, SB);
+
+	uint16_t gt_mask1 = _mm512_cmpgt_epi32_mask(Rv1, xmax1);
+	int pc1 = _mm_popcnt_u32(gt_mask1);
+        __m512i Rp1 = _mm512_and_si512(Rv1, _mm512_set1_epi32(0xffff));
+        __m512i Rp2 = _mm512_and_si512(Rv2, _mm512_set1_epi32(0xffff));
+	uint16_t gt_mask2 = _mm512_cmpgt_epi32_mask(Rv2, xmax2);
+	SET512(rfv,  SA);
+	int pc2 = _mm_popcnt_u32(gt_mask2);
+	SET512(SDv,  SD);
+
+	//Rp1 = _mm512_maskz_compress_epi32(gt_mask1, Rp1);
+	Rp1 = _mm512_maskz_compress_epi32(gt_mask1, Rp1);
+	Rp2 = _mm512_maskz_compress_epi32(gt_mask2, Rp2);
+
+	_mm512_mask_cvtepi32_storeu_epi16(ptr16-pc2, (1<<pc2)-1, Rp2);
+	ptr16 -= pc2;
+	_mm512_mask_cvtepi32_storeu_epi16(ptr16-pc1, (1<<pc1)-1, Rp1);
+	ptr16 -= pc1;
+
+	Rv1 = _mm512_mask_srli_epi32(Rv1, gt_mask1, Rv1, 16);
+	Rv2 = _mm512_mask_srli_epi32(Rv2, gt_mask2, Rv2, 16);
+
+	// interleaved form of this, helps on icc a bit
+	//rfv1 = _mm512_mulhi_epu32(Rv1, rfv1);
+	//rfv2 = _mm512_mulhi_epu32(Rv2, rfv2);
+
+	// Alternatives here:
+	// SHIFT right/left instead of AND: (very marginally slower)
+	//   rf1_hm = _mm512_and_epi32(rf1_hm, _mm512_set1_epi64((uint64_t)0xffffffff00000000));
+	// vs
+	//   rf1_hm = _mm512_srli_epi64(rf1_hm, 32); rf1_hm = _mm512_slli_epi64(rf1_hm, 32);
+	__m512i rf1_hm = _mm512_mul_epu32(_mm512_srli_epi64(Rv1, 32), _mm512_srli_epi64(rfv1, 32));
+	rf1_hm = _mm512_and_epi32(rf1_hm, _mm512_set1_epi64((uint64_t)0xffffffff00000000));
+	__m512i rf2_hm = _mm512_mul_epu32(_mm512_srli_epi64(Rv2, 32), _mm512_srli_epi64(rfv2, 32));
+	rf2_hm = _mm512_and_epi32(rf2_hm, _mm512_set1_epi64((uint64_t)0xffffffff00000000));
+	__m512i rf1_lm = _mm512_srli_epi64(_mm512_mul_epu32(Rv1, rfv1), 32);
+	__m512i rf2_lm = _mm512_srli_epi64(_mm512_mul_epu32(Rv2, rfv2), 32);
+	rfv1 = _mm512_or_epi32(rf1_lm, rf1_hm);
+	rfv2 = _mm512_or_epi32(rf2_lm, rf2_hm);
+
+	// Or a pure masked blend approach, sadly slower.
+	// rfv1 = _mm512_mask_blend_epi32(0x5555, _mm512_mul_epu32(_mm512_srli_epi64(Rv1, 32), _mm512_srli_epi64(rfv1, 32)), _mm512_srli_epi64(_mm512_mul_epu32(Rv1, rfv1), 32));
+	// rfv2 = _mm512_mask_blend_epi32(0xaaaa, _mm512_srli_epi64(_mm512_mul_epu32(Rv2, rfv2), 32), _mm512_mul_epu32(_mm512_srli_epi64(Rv2, 32), _mm512_srli_epi64(rfv2, 32)));
+
+	__m512i shiftv1 = _mm512_srli_epi32(SDv1, 16);
+	__m512i shiftv2 = _mm512_srli_epi32(SDv2, 16);
+
+	__m512i qv1 = _mm512_srlv_epi32(rfv1, shiftv1);
+	__m512i qv2 = _mm512_srlv_epi32(rfv2, shiftv2);
+	SET512(biasv, SC);
+
+	qv1 = _mm512_mullo_epi32(qv1, _mm512_and_si512(SDv1, _mm512_set1_epi32(0xffff)));
+	qv1 = _mm512_add_epi32(qv1, biasv1);
+	Rv1 = _mm512_add_epi32(Rv1, qv1);
+
+	qv2 = _mm512_mullo_epi32(qv2, _mm512_and_si512(SDv2, _mm512_set1_epi32(0xffff)));
+	qv2 = _mm512_add_epi32(qv2, biasv2);
+	Rv2 = _mm512_add_epi32(Rv2, qv2);
+#else
+	// Original code
+
+	// Equiv to:
+	// for (z = 32-1; z >= 0; z--) {
+	//     x_max[z]     = SB[c[z]];
+	// }
+	//
+	// for (z = 32-1; z >= 0; z--) {
+	//     uint32_t x = ransN[z];
+	//     // flush
+	//     if (x > x_max[z]) {
+	// 	*--ptr16 = (uint16_t) (x & 0xffff);
+	// 	x >>= 16;
+	//     }
+	//     // renorm
+	//     uint32_t q = (uint32_t) (((uint64_t)x * rcp_freq[z]) >> rcp_shift[z]);
+	//     ransN[z] = x + bias[z] + q * cmpl_freq[z];
+	// }
+
+	// xmax[z] = SB[c[z]]
+	SET512(xmax, SB);
+
+	// gt[z] = (ransN[z] > x_max[z]);
+	uint16_t gt_mask1 = _mm512_cmpgt_epi32_mask(Rv1, xmax1);
+	uint16_t gt_mask2 = _mm512_cmpgt_epi32_mask(Rv2, xmax2);
+
+	// AND, COMPRESS, CVT, STORE
+	//
+	// AAAABBBBCCCCDDDD (rans1 => 0-15)
+	// PPPPQQQQRRRRSSSS (xmax)
+	// 0   1   0   1    cmpgt (BBBB>QQQQ && DDDD>SSSS)
+	// --AA--BB--CC--DD and (bottom 16-bit only as packus is saturated)
+	// ----------BB--DD maskz_compress_epi32
+	// store       BBDD mask_cvtepi32_storeu_epi16
+	
+	// Bottom 16-bits
+        __m512i Rp1 = _mm512_and_si512(Rv1, _mm512_set1_epi32(0xffff));
+        __m512i Rp2 = _mm512_and_si512(Rv2, _mm512_set1_epi32(0xffff));
+	int pc2 = _mm_popcnt_u32(gt_mask2);
+	int pc1 = _mm_popcnt_u32(gt_mask1);
+	// Compressed
+	Rp1 = _mm512_maskz_compress_epi32(gt_mask1, Rp1);
+	Rp2 = _mm512_maskz_compress_epi32(gt_mask2, Rp2);
+	// store bottom popcnt parts.
+	// if (gt[z]) store[m++] = ransN[z] & 0xffff;
+	// memcpy(ptr16-m, store, m*2);
+	// ptr16 -= m;
+	_mm512_mask_cvtepi32_storeu_epi16(ptr16-pc2, (1<<pc2)-1, Rp2);
+	ptr16 -= pc2;
+	_mm512_mask_cvtepi32_storeu_epi16(ptr16-pc1, (1<<pc1)-1, Rp1);
+	ptr16 -= pc1;
+
+	// if (gt[z]) ransN[z] >>= 16;
+	Rv1 = _mm512_mask_srli_epi32(Rv1, gt_mask1, Rv1, 16);
+	Rv2 = _mm512_mask_srli_epi32(Rv2, gt_mask2, Rv2, 16);
+
+	// rcp_freq[z] = SA[z]
+	SET512(rfv,   SA);
+
+	// rf[z] = HI ((uint64_t)rans[z] * rcp_freq[z])
+	rfv1 = _mm512_mulhi_epu32(Rv1, rfv1);
+	rfv2 = _mm512_mulhi_epu32(Rv2, rfv2);
+
+	// cmpl_freq, rcp_shift <- SD[z]
+	SET512(SDv,   SD);
+
+	__m512i shiftv1 = _mm512_srli_epi32(SDv1, 16);
+	__m512i shiftv2 = _mm512_srli_epi32(SDv2, 16);
+
+	//shiftv1 = _mm512_sub_epi32(shiftv1, _mm512_set1_epi32(32));
+	//shiftv2 = _mm512_sub_epi32(shiftv2, _mm512_set1_epi32(32));
+
+	// uint32_t q = (uint32_t) (rf[z] >> rcp_shift[z]);
+	__m512i qv1 = _mm512_srlv_epi32(rfv1, shiftv1);
+	__m512i qv2 = _mm512_srlv_epi32(rfv2, shiftv2);
+
+	__m512i freqv1 = _mm512_and_si512(SDv1, _mm512_set1_epi32(0xffff));
+	__m512i freqv2 = _mm512_and_si512(SDv2, _mm512_set1_epi32(0xffff));
+	qv1 = _mm512_mullo_epi32(qv1, freqv1);
+	qv2 = _mm512_mullo_epi32(qv2, freqv2);
+
+	// rans[z] += bias[z] + q * cmpl_freq[z]
+	SET512(biasv, SC);
+	qv1 = _mm512_add_epi32(qv1, biasv1);
+	qv2 = _mm512_add_epi32(qv2, biasv2);
+
+	Rv1 = _mm512_add_epi32(Rv1, qv1);
+	Rv2 = _mm512_add_epi32(Rv2, qv2);
+#endif // optimised version
+    }
+    ptr = (uint8_t *)ptr16;
+    STORE512(Rv, ransN);
+
+    for (z = NX-1; z >= 0; z--)
+	RansEncFlush(&ransN[z], &ptr);
+    
+    // Finalise block size and return it
+    *out_size = (out_end - ptr) + tab_size;
+
+    cp = out;
+    *cp++ = (in_size>> 0) & 0xff;
+    *cp++ = (in_size>> 8) & 0xff;
+    *cp++ = (in_size>>16) & 0xff;
+    *cp++ = (in_size>>24) & 0xff;
+
+    memmove(out + tab_size, ptr, out_end-ptr);
+
+    return out;
+}
+
 typedef struct {
     unsigned char R[TOTFREQ];
 } ari_decoder;
 
-unsigned char *rans_uncompress_O0_4x16(unsigned char *in, unsigned int in_size,
+unsigned char *rans_uncompress_O0_32x16(unsigned char *in, unsigned int in_size,
 				       unsigned char *out, unsigned int *out_size) {
     /* Load in the static tables */
     unsigned char *cp = in + 4;
@@ -814,7 +1584,7 @@ unsigned char *rans_compress_O1_4x16(unsigned char *in, unsigned int in_size,
     unsigned char *cp, *out_end;
     unsigned int tab_size, rle_i, rle_j;
     RansEncSymbol syms[256][256];
-    int bound = rans_compress_bound_4x16(in_size,1, NULL);
+    int bound = rans_compress_bound_32x16(in_size,1, NULL);
 
     if (!out) {
 	*out_size = bound;
@@ -1348,31 +2118,30 @@ unsigned char *rans_uncompress_O1sfb_4x16(unsigned char *in, unsigned int in_siz
 /*-----------------------------------------------------------------------------
  * Simple interface to the order-0 vs order-1 encoders and decoders.
  */
-unsigned char *rans_compress_to_4x16(unsigned char *in,  unsigned int in_size,
-				     unsigned char *out, unsigned int *out_size,
-				     int order) {
+unsigned char *rans_compress_to_32x16(unsigned char *in,  unsigned int in_size,
+				      unsigned char *out, unsigned int *out_size,
+				      int order) {
     return order
 	? rans_compress_O1_4x16(in, in_size, out, out_size)
-	: rans_compress_O0_4x16(in, in_size, out, out_size);
+	: rans_compress_O0_32x16(in, in_size, out, out_size);
 }
 
-unsigned char *rans_compress_4x16(unsigned char *in, unsigned int in_size,
-				  unsigned int *out_size, int order) {
-    return rans_compress_to_4x16(in, in_size, NULL, out_size, order);
+unsigned char *rans_compress_32x16(unsigned char *in, unsigned int in_size,
+				   unsigned int *out_size, int order) {
+    return rans_compress_to_32x16(in, in_size, NULL, out_size, order);
 }
 
-unsigned char *rans_uncompress_to_4x16(unsigned char *in,  unsigned int in_size,
-				       unsigned char *out, unsigned int *out_size,
-				       int order) {
+unsigned char *rans_uncompress_to_32x16(unsigned char *in,  unsigned int in_size,
+					unsigned char *out, unsigned int *out_size,
+					int order) {
     return order
 	? rans_uncompress_O1sfb_4x16(in, in_size, out, out_size)
-      //? rans_uncompress_O1c_4x16(in, in_size, out, out_size)
-	: rans_uncompress_O0_4x16(in, in_size, out, out_size);
+	: rans_uncompress_O0_32x16(in, in_size, out, out_size);
 }
 
-unsigned char *rans_uncompress_4x16(unsigned char *in, unsigned int in_size,
-				    unsigned int *out_size, int order) {
-    return rans_uncompress_to_4x16(in, in_size, NULL, out_size, order);
+unsigned char *rans_uncompress_32x16(unsigned char *in, unsigned int in_size,
+				     unsigned int *out_size, int order) {
+    return rans_uncompress_to_32x16(in, in_size, NULL, out_size, order);
 }
 
 
@@ -1452,7 +2221,7 @@ int main(int argc, char **argv) {
 	    b[nb].blk = malloc(len);
 	    b[nb].sz = len;
 	    memcpy(b[nb].blk, in_buf, len);
-	    bc[nb].sz = rans_compress_bound_4x16(BLK_SIZE, order, NULL);
+	    bc[nb].sz = rans_compress_bound_32x16(BLK_SIZE, order, NULL);
 	    bc[nb].blk = malloc(bc[nb].sz);
 	    bu[nb].sz = BLK_SIZE;
 	    bu[nb].blk = malloc(BLK_SIZE);
@@ -1461,7 +2230,7 @@ int main(int argc, char **argv) {
 	}
 
 #ifndef NTRIALS
-#define NTRIALS 10
+#  define NTRIALS 10
 #endif
 	int trials = NTRIALS;
 	while (trials--) {
@@ -1473,7 +2242,7 @@ int main(int argc, char **argv) {
 	    out_sz = 0;
 	    for (i = 0; i < nb; i++) {
 		unsigned int csz = bc[i].sz;
-		bc[i].blk = rans_compress_to_4x16(b[i].blk, b[i].sz, bc[i].blk, &csz, order);
+		bc[i].blk = rans_compress_to_32x16(b[i].blk, b[i].sz, bc[i].blk, &csz, order);
 		assert(csz <= bc[i].sz);
 		out_sz += 5 + csz;
 	    }
@@ -1486,7 +2255,7 @@ int main(int argc, char **argv) {
 	    gettimeofday(&tv3, NULL);
 
 	    for (i = 0; i < nb; i++)
-		bu[i].blk = rans_uncompress_to_4x16(bc[i].blk, bc[i].sz, bu[i].blk, &bu[i].sz, order);
+		bu[i].blk = rans_uncompress_to_32x16(bc[i].blk, bc[i].sz, bu[i].blk, &bu[i].sz, order);
 
 	    gettimeofday(&tv4, NULL);
 
@@ -1530,7 +2299,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Truncated input\n");
 		exit(1);
 	    }
-	    out = rans_uncompress_4x16(in_buf, in_size, &out_size, order);
+	    out = rans_uncompress_32x16(in_buf, in_size, &out_size, order);
 	    if (!out)
 		abort();
 
@@ -1548,8 +2317,8 @@ int main(int argc, char **argv) {
 	    if (in_size <= 0)
 		break;
 
-	    out = rans_compress_4x16(in_buf, in_size, &out_size,
-				     order && in_size >= 4);
+	    out = rans_compress_32x16(in_buf, in_size, &out_size,
+				      order && in_size >= 4);
 
 	    fputc(order && in_size >= 4, outfp);
 	    fwrite(&out_size, 1, 4, outfp);
