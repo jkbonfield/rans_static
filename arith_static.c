@@ -71,6 +71,11 @@
  * buffer locations.
  */
 
+#ifdef __GNUC__
+static inline uint32_t i_log2(const uint32_t x) {
+    return 31-__builtin_clz(x);
+}
+#else
 static inline uint32_t i_log2(const uint32_t x) {
     uint32_t y;
     asm ( "\tbsr %1, %0\n"
@@ -78,10 +83,9 @@ static inline uint32_t i_log2(const uint32_t x) {
 	  : "r" (x)
 	  );
 
-    // or 31-__builtin_clz(x);
-
     return y;
 }
+#endif
 
 #define  TOP	   (1<<24)
 
