@@ -1,3 +1,10 @@
+NOTE
+----
+
+Please see https://github.com/samtools/htscodecs/ for modern supported
+implementations of these codecs, amongst other things.  These include
+more aggressively SIMD optimised variants.
+
 Introduction
 ------------
 
